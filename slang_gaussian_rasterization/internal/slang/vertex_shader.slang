@@ -47,6 +47,7 @@ void vertex_shader(DiffTensorView xyz_ws,
                    TensorView<int32_t> out_radii,
                    DiffTensorView out_xyz_vs,
                    DiffTensorView out_inv_cov_vs,
+                   DiffTensorView out_inv_cov3d_vs,
                    DiffTensorView out_rgb,
                    no_diff float fovy,
                    no_diff float fovx,
@@ -70,7 +71,7 @@ void vertex_shader(DiffTensorView xyz_ws,
     }
 
     float det = compute_det(splat.cov_vs);
-
+    float3x3 inv_cov3d_vs = covariance_3dw_to_3dv(cam, splat.cov_vs);
     if (det == 0.0f)
         return;
     float radius = splat_radius(splat.cov_vs, det);

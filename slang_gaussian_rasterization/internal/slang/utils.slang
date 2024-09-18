@@ -158,6 +158,14 @@ float2x2 covariance_3d_to_2d(Camera cam, float3 xyz_ws, float3x3 cov_ws) {
     return float2x2(cov_vs);
 }
 
+[Differentiable]
+float3x3 covariance_3dw_to_3dv(Camera cam, float3x3 cov_ws) {
+    float3x3 R = (float3x3)cam.world_view_transform;
+    float3x3 cov_vs = mul(R, mul(cov_ws, mul(transpose(R))));
+    
+    return float3x3(cov_vs);
+}
+
 struct Gaussian_3D : IDifferentiable
 {
     float3 xyz_ws;
