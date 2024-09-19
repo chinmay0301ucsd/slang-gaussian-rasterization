@@ -20,6 +20,7 @@ from slang_gaussian_rasterization.internal.sort_by_keys import sort_by_keys_cub
 def vertex_and_tile_shader(xyz_ws,
                            rotations,
                            scales,
+                           scale3d_factor,
                            sh_coeffs,
                            active_sh,
                            world_view_transform,
@@ -35,6 +36,8 @@ def vertex_and_tile_shader(xyz_ws,
       xyz_ws: Tensor with world-space(ws) coordinates of Gaussian means [N, 3].
       rotations: Tensor with the quaternions describing the local roation of a Gaussian [N, 4].
       scales: Tensor with the scales describing the extent of the Gaussians along the major axes [N, 3].
+      scale3d_factor: Tensor with the scaling factor to modify 3D scales of the Gaussians.
+                      Used only for volr splatting, else ones. [N, 1]. 
       sh_coeffs: Tensor with the spherical harmonic coefficient which describe with 16 values for each color 
                  the view-dependent emission of each Gaussian [N, 16, 3].
       active_sh: The number of the first active spherical harmonic coefficients, rendering ignores the rest.
@@ -54,9 +57,11 @@ def vertex_and_tile_shader(xyz_ws,
       rgb: Tensor with the rgb color of the Gaussians evaluated for that corresponding camera.
     """
     n_points = xyz_ws.shape[0]
-    tiles_touched, rect_tile_space, radii, xyz_vs, inv_cov_vs, rgb = VertexShader.apply(xyz_ws, 
+    ## Add the scaling factor to handle the scaling based on opacity later
+    tiles_touched, rect_tile_space, radii, xyz_vs, xyz3d_cam, inv_cov_vs, inv_cov3d_vs, rgb = VertexShader.apply(xyz_ws, 
                                                                                         rotations,
                                                                                         scales,
+                                                                                        scale3d_factor,
                                                                                         sh_coeffs,
                                                                                         active_sh,
                                                                                         world_view_transform,
@@ -98,13 +103,13 @@ def vertex_and_tile_shader(xyz_ws,
               gridSize=(math.ceil(total_size_index_buffer/256), 1, 1)
       )
 
-    return sorted_gauss_idx, tile_ranges, radii, xyz_vs, inv_cov_vs, rgb
+    return sorted_gauss_idx, tile_ranges, radii, xyz_vs, xyz3d_cam, inv_cov_vs, inv_cov3d_vs, rgb
 
 
 class VertexShader(torch.autograd.Function):
     @staticmethod
     def forward(ctx, 
-                xyz_ws, rotations, scales,
+                xyz_ws, rotations, scales, scale3d_factor,
                 sh_coeffs, active_sh,
                 world_view_transform, proj_mat, cam_pos,
                 fovy, fovx,
@@ -119,11 +124,16 @@ class VertexShader(torch.autograd.Function):
       radii = torch.zeros((n_points),
                           device="cuda",
                           dtype=torch.int32)
-      
       xyz_vs = torch.zeros((n_points, 3),
                           device="cuda",
                           dtype=torch.float)
+      xyz3d_cam = torch.zeros((n_points, 3),
+                          device="cuda",
+                          dtype=torch.float)
       inv_cov_vs = torch.zeros((n_points, 2, 2),
+                                device="cuda",
+                                dtype=torch.float)
+      inv_cov3d_vs = torch.zeros((n_points, 3, 3),
                                 device="cuda",
                                 dtype=torch.float)
       rgb = torch.zeros((n_points, 3),
@@ -133,6 +143,7 @@ class VertexShader(torch.autograd.Function):
       slang_modules.vertex_shader.vertex_shader(xyz_ws=xyz_ws,
                                                 rotations=rotations,
                                                 scales=scales,
+                                                scale3d_factor=scale3d_factor,
                                                 sh_coeffs=sh_coeffs,
                                                 active_sh=active_sh,
                                                 world_view_transform=world_view_transform,
@@ -142,7 +153,9 @@ class VertexShader(torch.autograd.Function):
                                                 out_rect_tile_space=rect_tile_space,
                                                 out_radii=radii,
                                                 out_xyz_vs=xyz_vs,
+                                                out_xyz3d_cam=xyz3d_cam,
                                                 out_inv_cov_vs=inv_cov_vs,
+                                                out_inv_cov3d_vs=inv_cov3d_vs,
                                                 out_rgb=rgb,
                                                 fovy=fovy,
                                                 fovx=fovx,
@@ -156,19 +169,19 @@ class VertexShader(torch.autograd.Function):
               gridSize=(math.ceil(n_points/256), 1, 1)
       )
 
-      ctx.save_for_backward(xyz_ws, rotations, scales, sh_coeffs, world_view_transform, proj_mat, cam_pos,
-                            tiles_touched, rect_tile_space, radii, xyz_vs, inv_cov_vs, rgb)
+      ctx.save_for_backward(xyz_ws, rotations, scales, scale3d_factor, sh_coeffs, world_view_transform, proj_mat, cam_pos,
+                            tiles_touched, rect_tile_space, radii, xyz_vs, xyz3d_cam, inv_cov_vs, inv_cov3d_vs, rgb)
       ctx.render_grid = render_grid
       ctx.fovy = fovy
       ctx.fovx = fovx
       ctx.active_sh = active_sh
 
-      return tiles_touched, rect_tile_space, radii, xyz_vs, inv_cov_vs, rgb
+      return tiles_touched, rect_tile_space, radii, xyz_vs, xyz3d_cam, inv_cov_vs, inv_cov3d_vs, rgb
     
     @staticmethod
-    def backward(ctx, grad_tiles_touched, grad_rect_tile_space, grad_radii, grad_xyz_vs, grad_inv_cov_vs, grad_rgb):
-        (xyz_ws, rotations, scales, sh_coeffs, world_view_transform, proj_mat, cam_pos,
-         tiles_touched, rect_tile_space, radii, xyz_vs, inv_cov_vs, rgb) = ctx.saved_tensors
+    def backward(ctx, grad_tiles_touched, grad_rect_tile_space, grad_radii, grad_xyz_vs, grad_xyz3d_cam, grad_inv_cov_vs, grad_inv_cov3d_vs, grad_rgb):
+        (xyz_ws, rotations, scales, scale3d_factor, sh_coeffs, world_view_transform, proj_mat, cam_pos,
+         tiles_touched, rect_tile_space, radii, xyz_vs, xyz3d_cam,inv_cov_vs, inv_cov3d_vs, rgb) = ctx.saved_tensors
         render_grid = ctx.render_grid
         fovy = ctx.fovy
         fovx = ctx.fovx
@@ -179,11 +192,13 @@ class VertexShader(torch.autograd.Function):
         grad_xyz_ws = torch.zeros_like(xyz_ws)
         grad_rotations = torch.zeros_like(rotations)
         grad_scales = torch.zeros_like(scales)
+        grad_scale3d_factor = torch.zeros_like(scale3d_factor)
         grad_sh_coeffs = torch.zeros_like(sh_coeffs)
 
         slang_modules.vertex_shader.vertex_shader.bwd(xyz_ws=(xyz_ws, grad_xyz_ws),
                                                       rotations=(rotations, grad_rotations),
                                                       scales=(scales, grad_scales),
+                                                      scale3d_factor=(scale3d_factor, grad_scale3d_factor),
                                                       sh_coeffs=(sh_coeffs, grad_sh_coeffs),
                                                       active_sh=active_sh,
                                                       world_view_transform=world_view_transform,
@@ -193,7 +208,9 @@ class VertexShader(torch.autograd.Function):
                                                       out_rect_tile_space=rect_tile_space,
                                                       out_radii=radii,
                                                       out_xyz_vs=(xyz_vs, grad_xyz_vs),
+                                                      out_xyz3d_cam=(xyz3d_cam, grad_xyz3d_cam),
                                                       out_inv_cov_vs=(inv_cov_vs, grad_inv_cov_vs),
+                                                      out_inv_cov3d_vs=(inv_cov3d_vs, grad_inv_cov3d_vs),
                                                       out_rgb=(rgb, grad_rgb),
                                                       fovy=fovy,
                                                       fovx=fovx,
@@ -206,4 +223,4 @@ class VertexShader(torch.autograd.Function):
               blockSize=(256, 1, 1),
               gridSize=(math.ceil(n_points/256), 1, 1)
         )
-        return grad_xyz_ws, grad_rotations, grad_scales, grad_sh_coeffs, None, None, None, None, None, None, None
+        return grad_xyz_ws, grad_rotations, grad_scales, grad_scale3d_factor, grad_sh_coeffs, None, None, None, None, None, None, None

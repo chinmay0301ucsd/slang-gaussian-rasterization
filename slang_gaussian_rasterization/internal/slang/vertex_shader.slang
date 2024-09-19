@@ -38,6 +38,7 @@ void vertex_shader(DiffTensorView xyz_ws,
                    DiffTensorView sh_coeffs,
                    DiffTensorView rotations,
                    DiffTensorView scales,
+                   DiffTensorView scale3d_factor,
                    uint active_sh,
                    TensorView<float> world_view_transform,
                    TensorView<float> proj_mat,
@@ -46,6 +47,7 @@ void vertex_shader(DiffTensorView xyz_ws,
                    TensorView<int32_t> out_rect_tile_space,
                    TensorView<int32_t> out_radii,
                    DiffTensorView out_xyz_vs,
+                   DiffTensorView out_xyz3d_cam,
                    DiffTensorView out_inv_cov_vs,
                    DiffTensorView out_inv_cov3d_vs,
                    DiffTensorView out_rgb,
@@ -64,14 +66,23 @@ void vertex_shader(DiffTensorView xyz_ws,
         return;
 
     Camera cam = no_diff load_camera(world_view_transform, proj_mat, cam_pos, fovy, fovx, image_height, image_width);
+    // TODO: Add the opacity based scaling factor here to gauss, for calculating correct tile sizes
     Gaussian_3D gauss = load_gaussian(g_idx, xyz_ws, sh_coeffs, rotations, scales, active_sh);
+    // Apply scale3d_factor to the Gaussian scales, to incorporate effect of opacity in computing tile size
+    float scalef = scale3d_factor[g_idx];
+    gauss.scales = gauss.scales * scalef;
     Splat_2D_Vertex splat = project_gaussian_to_camera(gauss, cam, active_sh);
     if (splat.xyz_vs.z <= 0.2) {
         return;
     }
-
     float det = compute_det(splat.cov_vs);
-    float3x3 inv_cov3d_vs = covariance_3dw_to_3dv(cam, splat.cov_vs);
+    // Computing 3D covariance as part of the vertex shader and exporting it for future use. 
+    // Removing the opacity based scaling factor before these steps, so that actual covariance isn't affected. 
+    gauss.scales = gauss.scales / scalef;
+    float3x3 cov3d_ws = get_covariance_from_quat_scales(gauss.rotations, gauss.scales);
+    float3x3 cov3d_vs = covariance_3dw_to_3dv(cam, cov3d_ws);
+    float3x3 inv_cov3d_vs = inverse3x3(cov3d_vs);
+    float3 xyz3d_cam = geom_transform_points2(gauss.xyz_ws, cam.world_view_transform);
     if (det == 0.0f)
         return;
     float radius = splat_radius(splat.cov_vs, det);
@@ -98,10 +109,22 @@ void vertex_shader(DiffTensorView xyz_ws,
     out_xyz_vs.storeOnce(uint2(g_idx, 0), splat.xyz_vs.x);
     out_xyz_vs.storeOnce(uint2(g_idx, 1), splat.xyz_vs.y);
     out_xyz_vs.storeOnce(uint2(g_idx, 2), splat.xyz_vs.z);
+    out_xyz3d_cam.storeOnce(uint2(g_idx, 0), xyz3d_cam.x);
+    out_xyz3d_cam.storeOnce(uint2(g_idx, 1), xyz3d_cam.y);
+    out_xyz3d_cam.storeOnce(uint2(g_idx, 2), xyz3d_cam.z);
     out_inv_cov_vs.storeOnce(uint3(g_idx, 0, 0), g_inv_cov_vs[0][0]);
     out_inv_cov_vs.storeOnce(uint3(g_idx, 0, 1), g_inv_cov_vs[0][1]);
     out_inv_cov_vs.storeOnce(uint3(g_idx, 1, 0), g_inv_cov_vs[1][0]);
     out_inv_cov_vs.storeOnce(uint3(g_idx, 1, 1), g_inv_cov_vs[1][1]);
+    out_inv_cov3d_vs.storeOnce(uint3(g_idx, 0, 0), inv_cov3d_vs[0][0]);
+    out_inv_cov3d_vs.storeOnce(uint3(g_idx, 0, 1), inv_cov3d_vs[0][1]);
+    out_inv_cov3d_vs.storeOnce(uint3(g_idx, 0, 2), inv_cov3d_vs[0][2]);
+    out_inv_cov3d_vs.storeOnce(uint3(g_idx, 1, 0), inv_cov3d_vs[1][0]);
+    out_inv_cov3d_vs.storeOnce(uint3(g_idx, 1, 1), inv_cov3d_vs[1][1]);
+    out_inv_cov3d_vs.storeOnce(uint3(g_idx, 1, 2), inv_cov3d_vs[1][2]);
+    out_inv_cov3d_vs.storeOnce(uint3(g_idx, 2, 0), inv_cov3d_vs[2][0]);
+    out_inv_cov3d_vs.storeOnce(uint3(g_idx, 2, 1), inv_cov3d_vs[2][1]);
+    out_inv_cov3d_vs.storeOnce(uint3(g_idx, 2, 2), inv_cov3d_vs[2][2]);
     out_rgb.storeOnce(uint2(g_idx, 0), splat.rgb.r);
     out_rgb.storeOnce(uint2(g_idx, 1), splat.rgb.g);
     out_rgb.storeOnce(uint2(g_idx, 2), splat.rgb.b);

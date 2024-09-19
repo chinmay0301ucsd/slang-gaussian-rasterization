@@ -58,6 +58,21 @@ float2x2 read_t2x2_float2x2(uint32_t idx, DiffTensorView t2x2)
 }
 
 [Differentiable]
+float3x3 read_t3x3_float3x3(uint32_t idx, DiffTensorView t3x3)
+{
+    return float3x3(t3x3[uint3(idx, 0, 0)],
+                    t3x3[uint3(idx, 1, 0)],
+                    t3x3[uint3(idx, 2, 0)],
+                    t3x3[uint3(idx, 0, 1)],
+                    t3x3[uint3(idx, 1, 1)],
+                    t3x3[uint3(idx, 2, 1)],
+                    t3x3[uint3(idx, 0, 2)],
+                    t3x3[uint3(idx, 1, 2)],
+                    t3x3[uint3(idx, 2, 2)]);
+}
+
+
+[Differentiable]
 float ndc2pix(float v, int S)
 {
 	return ((v + 1.0) * S - 1.0) * 0.5;
@@ -161,7 +176,7 @@ float2x2 covariance_3d_to_2d(Camera cam, float3 xyz_ws, float3x3 cov_ws) {
 [Differentiable]
 float3x3 covariance_3dw_to_3dv(Camera cam, float3x3 cov_ws) {
     float3x3 R = (float3x3)cam.world_view_transform;
-    float3x3 cov_vs = mul(R, mul(cov_ws, mul(transpose(R))));
+    float3x3 cov_vs = mul(R, mul(cov_ws, transpose(R)));
     
     return float3x3(cov_vs);
 }
@@ -211,6 +226,30 @@ float splat_radius(float2x2 cov_vs, float det) {
 float compute_det(float2x2 M) {
     return M[0][0] * M[1][1] - M[0][1] * M[1][0];
 }
+
+[Differentiable]
+float3x3 inverse3x3(float3x3 M)
+{
+    float det = M[0][0] * (M[1][1] * M[2][2] - M[2][1] * M[1][2]) -
+                M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) +
+                M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]);
+
+    float invDet = 1.0 / det;
+
+    float3x3 minv;
+    minv[0][0] = (M[1][1] * M[2][2] - M[2][1] * M[1][2]) * invDet;
+    minv[0][1] = (M[0][2] * M[2][1] - M[0][1] * M[2][2]) * invDet;
+    minv[0][2] = (M[0][1] * M[1][2] - M[0][2] * M[1][1]) * invDet;
+    minv[1][0] = (M[1][2] * M[2][0] - M[1][0] * M[2][2]) * invDet;
+    minv[1][1] = (M[0][0] * M[2][2] - M[0][2] * M[2][0]) * invDet;
+    minv[1][2] = (M[1][0] * M[0][2] - M[0][0] * M[1][2]) * invDet;
+    minv[2][0] = (M[1][0] * M[2][1] - M[2][0] * M[1][1]) * invDet;
+    minv[2][1] = (M[2][0] * M[0][1] - M[0][0] * M[2][1]) * invDet;
+    minv[2][2] = (M[0][0] * M[1][1] - M[1][0] * M[0][1]) * invDet;
+
+    return minv;
+}
+
 
 
 [Differentiable]
@@ -279,6 +318,77 @@ float4 evaluate_splat(Splat_2D_AlphaBlend g,
     float power = -0.5f * (g_inv_cov_vs[0][0] * d.x * d.x +
                            g_inv_cov_vs[1][1] * d.y * d.y + (g_inv_cov_vs[0][1] + g_inv_cov_vs[1][0]) * d.x * d.y);
     float alpha = min(0.99f, g_opacity * exp(power));
+    float3 premult_rgb = g_rgb * alpha;
+    
+    return float4(premult_rgb, alpha);
+}
+
+struct Splat_3D_AlphaBlend : IDifferentiable
+{
+    float3 xyz3d_vs;
+    float3 rgb;
+    float opacity;
+    float3x3 inv_cov3d_vs;
+};
+
+[Differentiable]
+Splat_3D_AlphaBlend load_splat3d_alphablend(int32_t g_idx,
+                                          DiffTensorView xyz3d_vs,
+                                          DiffTensorView inv_cov3d_vs,
+                                          DiffTensorView opacity,
+                                          DiffTensorView rgb)
+{
+    float3 g_xyz3d_vs = read_t3_float3(g_idx, xyz3d_vs);
+    float3 g_rgb = read_t3_float3(g_idx, rgb);
+    float g_opacity = read_t1_float(g_idx, opacity);
+    float3x3 g_inv_cov3d = read_t3x3_float3x3(g_idx, inv_cov3d_vs);
+
+    return { g_xyz3d_vs, g_rgb, g_opacity, g_inv_cov3d };
+}
+
+
+[Differentiable]
+float compute_maxpdf_ray(float3 mu,
+                         float3x3 inv_cov3d,
+                         float3 d) 
+{
+    float denominator = dot(d, mul(inv_cov3d, d));
+    float numerator = dot(mu, mul(inv_cov3d, d));
+    float tmax = max(numerator / denominator, 0.0f); 
+                 
+    float3 diff = tmax * d - mu; 
+    float power = -0.5 * dot(diff, mul(inv_cov3d, diff));
+    float pdfmax = exp(power);
+    return pdfmax;
+}
+
+
+[Differentiable]
+float4 evaluate_splat_volr(Splat_3D_AlphaBlend g, 
+                      float2 pix_coord,
+                      uint32_t H,
+                      uint32_t W, 
+                      no_diff float fovx,
+                      no_diff float fovy)
+{
+
+    float3 g_xyz = g.xyz3d_vs;
+    float3 g_rgb = g.rgb;
+    float g_opacity = g.opacity;
+    float3x3 g_inv_cov3d = g.inv_cov3d_vs;
+    float tan_half_fovx = tan(fovx / 2.0f);
+    float tan_half_fovy = tan(fovy / 2.0f);
+    float fx = W / (2.0f * tan_half_fovx);
+    float fy = H / (2.0f * tan_half_fovy);
+    float3 d = { (pix_coord.x - W/2.0f)/fx, (pix_coord.y - H/2.0f)/fy, 1.0f };
+    d = normalize(d);
+    float pdfmax = compute_maxpdf_ray(g_xyz, g_inv_cov3d, d);
+    float sigma_d = sqrt(1.0f / dot(d, mul(g_inv_cov3d, d)));
+    float alpha = 1 - exp(-sqrt(2*3.14159f) * g_opacity * sigma_d * pdfmax);
+    // float power = -0.5f * (g_inv_cov_vs[0][0] * d.x * d.x +
+    //                        g_inv_cov_vs[1][1] * d.y * d.y + (g_inv_cov_vs[0][1] + g_inv_cov_vs[1][0]) * d.x * d.y);
+    // float alpha = min(0.99f, g_opacity * exp(power));
+    alpha = min(0.99f, alpha);
     float3 premult_rgb = g_rgb * alpha;
     
     return float4(premult_rgb, alpha);

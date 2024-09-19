@@ -27,13 +27,15 @@ def render_alpha_blend_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
                                        world_view_transform, proj_mat, cam_pos,
                                        fovy, fovx, height, width, tile_size=16):
     
+    scale3d_factor = torch.ones_like(opacity, device=opacity.device)
     render_grid = RenderGrid(height,
                              width,
                              tile_height=tile_size,
                              tile_width=tile_size)
-    sorted_gauss_idx, tile_ranges, radii, xyz_vs, inv_cov_vs, rgb = vertex_and_tile_shader(xyz_ws,
+    sorted_gauss_idx, tile_ranges, radii, xyz_vs, xyz3d_cam, inv_cov_vs, inv_cov3d_vs, rgb = vertex_and_tile_shader(xyz_ws,
                                                                                            rotations,
                                                                                            scales,
+                                                                                           scale3d_factor,
                                                                                            sh_coeffs,
                                                                                            active_sh,
                                                                                            world_view_transform,

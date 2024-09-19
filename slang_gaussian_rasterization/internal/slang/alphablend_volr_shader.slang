@@ -19,7 +19,7 @@ import utils;
 static const uint TILE_HEIGHT = PYTHON_TILE_HEIGHT;
 static const uint TILE_WIDTH = PYTHON_TILE_WIDTH;
 
-groupshared Splat_2D_AlphaBlend collected_splats[TILE_HEIGHT * TILE_WIDTH];
+groupshared Splat_3D_AlphaBlend collected_splats[TILE_HEIGHT * TILE_WIDTH];
 groupshared uint32_t collected_idx[TILE_HEIGHT * TILE_WIDTH];
 
 [Differentiable]
@@ -37,10 +37,10 @@ float4 undo_pixel_state(float4 pixel_state_t_n, float4 gauss_rgba_t_n)
     return float4(color_t_nm1, transmittance_t_nm1);
 }
 
-[BackwardDerivative(bwd_alpha_blend)] // Use a custom derivative so that we can hand-write the structure of the reverse loop
-float4 alpha_blend(TensorView<int32_t> sorted_gauss_idx,
-                   DiffTensorView xyz_vs,
-                   DiffTensorView inv_cov_vs,
+[BackwardDerivative(bwd_alpha_blend_volr)] // Use a custom derivative so that we can hand-write the structure of the reverse loop
+float4 alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
+                   DiffTensorView xyz3d_vs,
+                   DiffTensorView inv_cov3d_vs,
                    DiffTensorView opacity,
                    DiffTensorView rgb,
                    DiffTensorView final_pixel_state,
@@ -50,6 +50,8 @@ float4 alpha_blend(TensorView<int32_t> sorted_gauss_idx,
                    uint32_t tile_idx_end,
                    uint32_t tile_height,
                    uint32_t tile_width,
+                   no_diff float fovx,
+                   no_diff float fovy,
                    uint32_t H,
                    uint32_t W)
 {
@@ -72,15 +74,15 @@ float4 alpha_blend(TensorView<int32_t> sorted_gauss_idx,
         if (tile_idx_start + splat_pointer_offset < tile_idx_end)
         {
             uint32_t coll_id = uint32_t(sorted_gauss_idx[tile_idx_start + splat_pointer_offset]);
-            collected_splats[thread_rank] = load_splat_alphablend(coll_id, xyz_vs, inv_cov_vs, opacity, rgb);
+            collected_splats[thread_rank] = load_splat3d_alphablend(coll_id, xyz3d_vs, inv_cov3d_vs, opacity, rgb);
         }
         AllMemoryBarrierWithGroupSync();
         if (thread_active) {
             for (int j = 0; j < min(block_size, splats_left_to_process); j++)
             {
                 local_n_contrib++;
-                Splat_2D_AlphaBlend g = collected_splats[j];
-                float4 gauss_rgba = evaluate_splat(g, center_pix_coord, H, W);
+                Splat_3D_AlphaBlend g = collected_splats[j];
+                float4 gauss_rgba = evaluate_splat_volr(g, center_pix_coord, H, W, fovx, fovy);
                 
                 // Skip Splats that have a tiny contribution.
                 if (gauss_rgba.a < 1.0f / 255.0f)
@@ -105,9 +107,9 @@ float4 alpha_blend(TensorView<int32_t> sorted_gauss_idx,
     return curr_pixel_state;
 }
 
-void bwd_alpha_blend(TensorView<int32_t> sorted_gauss_idx,
-                     DiffTensorView xyz_vs,
-                     DiffTensorView inv_cov_vs,
+void bwd_alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
+                     DiffTensorView xyz3d_vs,
+                     DiffTensorView inv_cov3d_vs,
                      DiffTensorView opacity,
                      DiffTensorView rgb,
                      DiffTensorView final_pixel_state,
@@ -117,6 +119,8 @@ void bwd_alpha_blend(TensorView<int32_t> sorted_gauss_idx,
                      uint32_t tile_idx_end,
                      uint32_t tile_height,
                      uint32_t tile_width,
+                     no_diff float fovx,
+                     no_diff float fovy,
                      uint32_t H,
                      uint32_t W,
                      float4 d_current_pixel_state)
@@ -154,7 +158,7 @@ void bwd_alpha_blend(TensorView<int32_t> sorted_gauss_idx,
         {
             uint32_t coll_id = uint32_t(sorted_gauss_idx[tile_idx_end - progress - 1]);
             collected_idx[thread_rank] = coll_id;
-            collected_splats[thread_rank] = load_splat_alphablend(coll_id, xyz_vs, inv_cov_vs, opacity, rgb);
+            collected_splats[thread_rank] = load_splat3d_alphablend(coll_id, xyz3d_vs, inv_cov3d_vs, opacity, rgb);
         }
         AllMemoryBarrierWithGroupSync();
         if (is_inside) {
@@ -164,9 +168,9 @@ void bwd_alpha_blend(TensorView<int32_t> sorted_gauss_idx,
                 if (current_splat_offset >= n_contrib_fwd)
                     continue;
                 uint32_t g_idx = collected_idx[j];
-                Splat_2D_AlphaBlend g = collected_splats[j];
+                Splat_3D_AlphaBlend g = collected_splats[j];
 
-                float4 gauss_rgba = evaluate_splat(g, center_pix_coord, H, W);
+                float4 gauss_rgba = evaluate_splat_volr(g, center_pix_coord, H, W, fovx, fovy);
 
                 if (gauss_rgba.a < 1.0f / 255.0f)
                     continue;
@@ -175,31 +179,34 @@ void bwd_alpha_blend(TensorView<int32_t> sorted_gauss_idx,
                 current_pixel_state = undo_pixel_state(current_pixel_state, gauss_rgba);
 
                 // Back-prop automatically through blending and gaussian evaluation.
-                DifferentialPair<Splat_2D_AlphaBlend> dp_g = diffPair(g);
+                DifferentialPair<Splat_3D_AlphaBlend> dp_g = diffPair(g);
                 DifferentialPair<float4> dp_gauss_rgba = diffPair(gauss_rgba);
                 DifferentialPair<float4> dp_current_pixel_state = diffPair(current_pixel_state);
 
                 bwd_diff(update_pixel_state)(dp_current_pixel_state, dp_gauss_rgba, d_current_pixel_state);
                 d_current_pixel_state = dp_current_pixel_state.getDifferential();
-                bwd_diff(evaluate_splat)(dp_g, dp_center_pix_coord, H, W, dp_gauss_rgba.d);
-                bwd_diff(load_splat_alphablend)(g_idx, xyz_vs, inv_cov_vs, opacity, rgb, dp_g.d);
+                bwd_diff(evaluate_splat_volr)(dp_g, dp_center_pix_coord, H, W, fovx, fovy, dp_gauss_rgba.d);
+                bwd_diff(load_splat3d_alphablend)(g_idx, xyz3d_vs, inv_cov3d_vs, opacity, rgb, dp_g.d);
             }
         }
         splats_left_to_process -= block_size;
     }
 }
 
+
 [AutoPyBindCUDA]
 [CUDAKernel]
 [Differentiable]
-void splat_tiled(TensorView<int32_t> sorted_gauss_idx,
+void splat_volr_tiled(TensorView<int32_t> sorted_gauss_idx,
                  TensorView<int32_t> tile_ranges,
-                 DiffTensorView xyz_vs,
-                 DiffTensorView inv_cov_vs,
+                 DiffTensorView xyz3d_vs,
+                 DiffTensorView inv_cov3d_vs,
                  DiffTensorView opacity,
                  DiffTensorView rgb,
                  DiffTensorView output_img,
                  TensorView<int32_t> n_contributors,
+                 no_diff float fovx,
+                 no_diff float fovy,
                  int grid_height,
                  int grid_width,
                  int tile_height,
@@ -215,9 +222,9 @@ void splat_tiled(TensorView<int32_t> sorted_gauss_idx,
 
     bool is_inside = (pix_coord.x < output_img.size(1) && pix_coord.y < output_img.size(0));
 
-    float4 pixel_state = alpha_blend(sorted_gauss_idx,
-                                     xyz_vs,
-                                     inv_cov_vs,
+    float4 pixel_state = alpha_blend_volr(sorted_gauss_idx,
+                                     xyz3d_vs,
+                                     inv_cov3d_vs,
                                      opacity,
                                      rgb,
                                      output_img,
@@ -227,6 +234,8 @@ void splat_tiled(TensorView<int32_t> sorted_gauss_idx,
                                      tile_idx_end,
                                      tile_height,
                                      tile_width,
+                                     fovx,
+                                     fovy,
                                      output_img.size(0),
                                      output_img.size(1));
 
@@ -237,5 +246,3 @@ void splat_tiled(TensorView<int32_t> sorted_gauss_idx,
       output_img.storeOnce(uint3(uint32_t(pix_coord.y), uint32_t(pix_coord.x), 3), pixel_state.a);
     }
 }
-
-
