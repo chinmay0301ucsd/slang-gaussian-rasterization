@@ -18,15 +18,16 @@ import torch
 from slang_gaussian_rasterization.internal.alphablend_tiled_slang import render_alpha_blend_tiles_slang_raw
 from slang_gaussian_rasterization.internal.alphablend_volr_tiled_slang import render_alpha_blend_volr_tiles_slang_raw
 
-def common_properties_from_inria_GaussianModel(gaussian_model, opacity_volr = True):
+def common_properties_from_inria_GaussianModel(gaussian_model):
   """ Fetches all the Gaussian properties from the inria defined Gaussian Model object"""
   xyz_ws = gaussian_model.get_xyz
-  opacity = gaussian_model.get_opacity_volr if opacity_volr else gaussian_model.get_opacity
+  opacity = gaussian_model.get_opacity
+  opacity_volr = gaussian_model.get_opacity_volr
   rotations = gaussian_model.get_rotation
   scales = gaussian_model.get_scaling
   sh_coeffs = gaussian_model.get_features
   
-  return xyz_ws, rotations, scales, sh_coeffs, opacity
+  return xyz_ws, rotations, scales, sh_coeffs, opacity, opacity_volr
 
 def common_properties_from_inria_Camera(camera):
   """ Fetches all the Camera properties from the inria defined object"""
@@ -51,12 +52,12 @@ def render(viewpoint_camera, pc, pipe, bg_color, scaling_modifier = 1.0, overrid
   assert torch.equal(bg_color, torch.zeros_like(bg_color)), "only black background is supported currently."
 
   active_sh = pc.active_sh_degree
-  xyz_ws, rotations, scales, sh_coeffs, opacity = common_properties_from_inria_GaussianModel(pc, opacity_volr=True)
+  xyz_ws, rotations, scales, sh_coeffs, opacity, opacity_volr = common_properties_from_inria_GaussianModel(pc)
   world_view_transform, proj_mat, cam_pos, fovy, fovx, height, width = common_properties_from_inria_Camera(viewpoint_camera)  
 
 
-  render_pkg = render_alpha_blend_volr_tiles_slang_raw(xyz_ws, rotations, scales, opacity, 
-                                                  sh_coeffs, active_sh,
+  render_pkg = render_alpha_blend_volr_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
+                                                  opacity_volr, sh_coeffs, active_sh,
                                                   world_view_transform, proj_mat, cam_pos,
                                                   fovy, fovx, height, width)
   

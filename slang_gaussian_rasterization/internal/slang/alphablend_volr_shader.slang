@@ -42,6 +42,7 @@ float4 alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
                    DiffTensorView xyz3d_vs,
                    DiffTensorView inv_cov3d_vs,
                    DiffTensorView opacity,
+                   DiffTensorView opacity_volr,
                    DiffTensorView rgb,
                    DiffTensorView final_pixel_state,
                    TensorView<int32_t> n_contributors,
@@ -74,7 +75,7 @@ float4 alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
         if (tile_idx_start + splat_pointer_offset < tile_idx_end)
         {
             uint32_t coll_id = uint32_t(sorted_gauss_idx[tile_idx_start + splat_pointer_offset]);
-            collected_splats[thread_rank] = load_splat3d_alphablend(coll_id, xyz3d_vs, inv_cov3d_vs, opacity, rgb);
+            collected_splats[thread_rank] = load_splat3d_alphablend(coll_id, xyz3d_vs, inv_cov3d_vs, opacity, opacity_volr, rgb);
         }
         AllMemoryBarrierWithGroupSync();
         if (thread_active) {
@@ -111,6 +112,7 @@ void bwd_alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
                      DiffTensorView xyz3d_vs,
                      DiffTensorView inv_cov3d_vs,
                      DiffTensorView opacity,
+                     DiffTensorView opacity_volr,
                      DiffTensorView rgb,
                      DiffTensorView final_pixel_state,
                      TensorView<int32_t> n_contributors,
@@ -158,7 +160,7 @@ void bwd_alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
         {
             uint32_t coll_id = uint32_t(sorted_gauss_idx[tile_idx_end - progress - 1]);
             collected_idx[thread_rank] = coll_id;
-            collected_splats[thread_rank] = load_splat3d_alphablend(coll_id, xyz3d_vs, inv_cov3d_vs, opacity, rgb);
+            collected_splats[thread_rank] = load_splat3d_alphablend(coll_id, xyz3d_vs, inv_cov3d_vs, opacity, opacity_volr, rgb);
         }
         AllMemoryBarrierWithGroupSync();
         if (is_inside) {
@@ -186,7 +188,7 @@ void bwd_alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
                 bwd_diff(update_pixel_state)(dp_current_pixel_state, dp_gauss_rgba, d_current_pixel_state);
                 d_current_pixel_state = dp_current_pixel_state.getDifferential();
                 bwd_diff(evaluate_splat_volr)(dp_g, dp_center_pix_coord, H, W, fovx, fovy, dp_gauss_rgba.d);
-                bwd_diff(load_splat3d_alphablend)(g_idx, xyz3d_vs, inv_cov3d_vs, opacity, rgb, dp_g.d);
+                bwd_diff(load_splat3d_alphablend)(g_idx, xyz3d_vs, inv_cov3d_vs, opacity, opacity_volr, rgb, dp_g.d);
             }
         }
         splats_left_to_process -= block_size;
@@ -202,6 +204,7 @@ void splat_volr_tiled(TensorView<int32_t> sorted_gauss_idx,
                  DiffTensorView xyz3d_vs,
                  DiffTensorView inv_cov3d_vs,
                  DiffTensorView opacity,
+                 DiffTensorView opacity_volr,
                  DiffTensorView rgb,
                  DiffTensorView output_img,
                  TensorView<int32_t> n_contributors,
@@ -226,6 +229,7 @@ void splat_volr_tiled(TensorView<int32_t> sorted_gauss_idx,
                                      xyz3d_vs,
                                      inv_cov3d_vs,
                                      opacity,
+                                     opacity_volr,
                                      rgb,
                                      output_img,
                                      n_contributors,

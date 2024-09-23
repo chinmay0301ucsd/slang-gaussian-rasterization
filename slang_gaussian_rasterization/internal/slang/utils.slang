@@ -228,6 +228,13 @@ float compute_det(float2x2 M) {
 }
 
 [Differentiable]
+float compute_det3x3(float3x3 M) {
+    return M[0][0] * (M[1][1] * M[2][2] - M[2][1] * M[1][2]) -
+           M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) +
+           M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]);
+}
+
+[Differentiable]
 float3x3 inverse3x3(float3x3 M)
 {
     float det = M[0][0] * (M[1][1] * M[2][2] - M[2][1] * M[1][2]) -
@@ -327,7 +334,8 @@ struct Splat_3D_AlphaBlend : IDifferentiable
 {
     float3 xyz3d_vs;
     float3 rgb;
-    float opacity;
+    float opacity; // Ranges between 0 and 1, same as 3DGS Opacity
+    float opacity_volr; // Ranges between 0 and max_opacity_volr, controls density of the Gaussian
     float3x3 inv_cov3d_vs;
 };
 
@@ -336,14 +344,16 @@ Splat_3D_AlphaBlend load_splat3d_alphablend(int32_t g_idx,
                                           DiffTensorView xyz3d_vs,
                                           DiffTensorView inv_cov3d_vs,
                                           DiffTensorView opacity,
+                                          DiffTensorView opacity_volr,
                                           DiffTensorView rgb)
 {
     float3 g_xyz3d_vs = read_t3_float3(g_idx, xyz3d_vs);
     float3 g_rgb = read_t3_float3(g_idx, rgb);
     float g_opacity = read_t1_float(g_idx, opacity);
+    float g_opacity_volr = read_t1_float(g_idx, opacity_volr);
     float3x3 g_inv_cov3d = read_t3x3_float3x3(g_idx, inv_cov3d_vs);
 
-    return { g_xyz3d_vs, g_rgb, g_opacity, g_inv_cov3d };
+    return { g_xyz3d_vs, g_rgb, g_opacity, g_opacity_volr, g_inv_cov3d };
 }
 
 
@@ -352,7 +362,7 @@ float compute_maxpdf_ray(float3 mu,
                          float3x3 inv_cov3d,
                          float3 d) 
 {
-    float denominator = dot(d, mul(inv_cov3d, d));
+    float denominator = max(eps, dot(d, mul(inv_cov3d, d)));
     float numerator = dot(mu, mul(inv_cov3d, d));
     float tmax = max(numerator / denominator, 0.0f); 
                  
@@ -375,19 +385,29 @@ float4 evaluate_splat_volr(Splat_3D_AlphaBlend g,
     float3 g_xyz = g.xyz3d_vs;
     float3 g_rgb = g.rgb;
     float g_opacity = g.opacity;
+    float g_opacity_volr = g.opacity_volr;
     float3x3 g_inv_cov3d = g.inv_cov3d_vs;
     float tan_half_fovx = tan(fovx / 2.0f);
     float tan_half_fovy = tan(fovy / 2.0f);
     float fx = W / (2.0f * tan_half_fovx);
     float fy = H / (2.0f * tan_half_fovy);
-    float3 d = { (pix_coord.x - W/2.0f)/fx, (pix_coord.y - H/2.0f)/fy, 1.0f };
+    float3 d = {(pix_coord.x - W/2.0f)/fx, (pix_coord.y - H/2.0f)/fy, 1.0f };
     d = normalize(d);
-    float pdfmax = compute_maxpdf_ray(g_xyz, g_inv_cov3d, d);
-    float sigma_d = sqrt(1.0f / dot(d, mul(g_inv_cov3d, d)));
-    float alpha = 1 - exp(-sqrt(2*3.14159f) * g_opacity * sigma_d * pdfmax);
-    // float power = -0.5f * (g_inv_cov_vs[0][0] * d.x * d.x +
-    //                        g_inv_cov_vs[1][1] * d.y * d.y + (g_inv_cov_vs[0][1] + g_inv_cov_vs[1][0]) * d.x * d.y);
-    // float alpha = min(0.99f, g_opacity * exp(power));
+
+    float denominator = max(eps, dot(d, mul(g_inv_cov3d, d)));
+    float numerator = dot(g_xyz, mul(g_inv_cov3d, d));
+    float tmax = max(numerator / denominator, 0.0f);
+
+    float3 diff = tmax * d - g_xyz;
+    float power = -0.5 * dot(diff, mul(g_inv_cov3d, diff));
+    // if (power + log(g_opacity + eps) < -7.0f) {
+    //     return float4(0.0f, 0.0f, 0.0f, 0.0f);
+    // }
+    float pdfmax = exp(power);
+    // float pdfmax = compute_maxpdf_ray(g_xyz, g_inv_cov3d, d);
+    float sigma_d = sqrt(1.0f / denominator);
+    float alpha = g_opacity*(1 - exp(-sqrt(2*3.14159f) * g_opacity_volr * sigma_d * pdfmax));
+
     alpha = min(0.99f, alpha);
     float3 premult_rgb = g_rgb * alpha;
     

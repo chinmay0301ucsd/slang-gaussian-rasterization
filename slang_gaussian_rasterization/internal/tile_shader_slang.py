@@ -70,7 +70,6 @@ def vertex_and_tile_shader(xyz_ws,
                                                                                         fovy,
                                                                                         fovx,
                                                                                         render_grid)
-
     with torch.no_grad():
       index_buffer_offset = torch.cumsum(tiles_touched, dim=0, dtype=tiles_touched.dtype)
       total_size_index_buffer = index_buffer_offset[-1]
