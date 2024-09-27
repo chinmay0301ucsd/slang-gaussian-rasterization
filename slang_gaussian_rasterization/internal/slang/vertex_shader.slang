@@ -69,7 +69,11 @@ void vertex_shader(DiffTensorView xyz_ws,
     // TODO: Add the opacity based scaling factor here to gauss, for calculating correct tile sizes
     Gaussian_3D gauss = load_gaussian(g_idx, xyz_ws, sh_coeffs, rotations, scales, active_sh);
     // Apply scale3d_factor to the Gaussian scales, to incorporate effect of opacity in computing tile size
-    float scalef = scale3d_factor[g_idx];
+    float scalef = read_t1_float(g_idx, scale3d_factor);
+    if (scalef <= 0.0) {
+        return;
+    }
+    // TODO: Add code here to compute scaling factor in alpha volr for each vertex.
     gauss.scales = gauss.scales * scalef;
     Splat_2D_Vertex splat = project_gaussian_to_camera(gauss, cam, active_sh);
     if (splat.xyz_vs.z <= 0.2) {
@@ -81,12 +85,11 @@ void vertex_shader(DiffTensorView xyz_ws,
     gauss.scales = gauss.scales / scalef;
     float3x3 cov3d_ws = get_covariance_from_quat_scales(gauss.rotations, gauss.scales);
     float3x3 cov3d_vs = covariance_3dw_to_3dv(cam, cov3d_ws);
+    float size = gauss.scales.x * gauss.scales.y * gauss.scales.z;
 
     // printf("invdet3d: %f det: %f\n", 1.0f/det3d, det);
     float3x3 inv_cov3d_vs = inverse3x3(cov3d_vs);
     float3 xyz3d_cam = geom_transform_points2(gauss.xyz_ws, cam.world_view_transform);
-    if (det == 0.0f)
-        return;
     float radius = splat_radius(splat.cov_vs, det);
 
 

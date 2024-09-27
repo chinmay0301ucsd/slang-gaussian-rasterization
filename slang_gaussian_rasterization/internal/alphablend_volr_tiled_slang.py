@@ -32,7 +32,7 @@ def render_alpha_blend_volr_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
                              tile_height=tile_size,
                              tile_width=tile_size)
     
-    scale3d_factor = torch.max(torch.sqrt(2 * torch.log(opacity_volr / 0.011) / 9.0), torch.ones_like(opacity_volr))
+    scale3d_factor = torch.sqrt(torch.max(2 * torch.log(opacity_volr / 0.01) / 9.0, torch.ones_like(opacity_volr)))
     sorted_gauss_idx, tile_ranges, radii, xyz_vs, xyz3d_cam, inv_cov3d_vs, inv_cov3d_vs, rgb  = vertex_and_tile_shader(xyz_ws,
                                                                                            rotations,
                                                                                            scales,
@@ -171,5 +171,4 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
             gridSize=(render_grid.grid_width, 
                       render_grid.grid_height, 1)
         )
-        
         return None, None, xyz3d_vs_grad, inv_cov3d_vs_grad, opacity_grad, opacity_volr_grad, rgb_grad, None, None, None

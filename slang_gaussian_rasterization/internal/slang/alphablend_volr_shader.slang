@@ -184,7 +184,6 @@ void bwd_alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
                 DifferentialPair<Splat_3D_AlphaBlend> dp_g = diffPair(g);
                 DifferentialPair<float4> dp_gauss_rgba = diffPair(gauss_rgba);
                 DifferentialPair<float4> dp_current_pixel_state = diffPair(current_pixel_state);
-
                 bwd_diff(update_pixel_state)(dp_current_pixel_state, dp_gauss_rgba, d_current_pixel_state);
                 d_current_pixel_state = dp_current_pixel_state.getDifferential();
                 bwd_diff(evaluate_splat_volr)(dp_g, dp_center_pix_coord, H, W, fovx, fovy, dp_gauss_rgba.d);
