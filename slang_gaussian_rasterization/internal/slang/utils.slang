@@ -395,7 +395,7 @@ float4 evaluate_splat_volr(Splat_3D_AlphaBlend g,
     float3 d = {(pix_coord.x - W/2.0f)/fx, (pix_coord.y - H/2.0f)/fy, 1.0f };
     d = normalize(d);
 
-    float denominator = max(eps*100.0f, dot(d, mul(g_inv_cov3d, d)));
+    float denominator = max(eps, dot(d, mul(g_inv_cov3d, d)));
     float numerator = dot(g_xyz, mul(g_inv_cov3d, d));
     float tmax = max(numerator / denominator, 0.0f);
 
@@ -403,7 +403,7 @@ float4 evaluate_splat_volr(Splat_3D_AlphaBlend g,
     float power = -0.5 * dot(diff, mul(g_inv_cov3d, diff));
     float pdfmax = exp(power);
 
-    float sigma_d = max(1.0e-3,sqrt(1.0f / denominator));
+    float sigma_d = sqrt(1.0f / denominator);
     // float alpha = g_opacity * (1.0f - exp(-sqrt(2 * 3.14159f) * g_opacity_volr * sigma_d * pdfmax));
     float alpha = 1.0f - exp(-sqrt(2 * 3.14159f) * g_opacity_volr * sigma_d * pdfmax);
     /*float3 mu_norm = normalize(g_xyz);
