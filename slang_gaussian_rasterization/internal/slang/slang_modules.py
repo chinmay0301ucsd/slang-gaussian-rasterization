@@ -23,9 +23,14 @@ vertex_shader = slangtorch.loadModule(os.path.join(shaders_path, "vertex_shader.
 tile_shader = slangtorch.loadModule(os.path.join(shaders_path, "tile_shader.slang"))
 alpha_blend_shaders = {}
 alpha_blend_volr_shaders = {}
+alpha_blend_tomo_shaders = {}
 for tile_height, tile_width in TILE_SIZES_HW:
   alpha_blend_shaders[(tile_height, tile_width)] = slangtorch.loadModule(os.path.join(shaders_path, "alphablend_shader.slang"), 
                                                                          defines={"PYTHON_TILE_HEIGHT": tile_height, "PYTHON_TILE_WIDTH": tile_width})
 for tile_height, tile_width in TILE_SIZES_HW:
   alpha_blend_volr_shaders[(tile_height, tile_width)] = slangtorch.loadModule(os.path.join(shaders_path, "alphablend_volr_shader.slang"), 
+                                                                         defines={"PYTHON_TILE_HEIGHT": tile_height, "PYTHON_TILE_WIDTH": tile_width})
+
+for tile_height, tile_width in TILE_SIZES_HW:
+  alpha_blend_tomo_shaders[(tile_height, tile_width)] = slangtorch.loadModule(os.path.join(shaders_path, "tomography_shader.slang"), 
                                                                          defines={"PYTHON_TILE_HEIGHT": tile_height, "PYTHON_TILE_WIDTH": tile_width})

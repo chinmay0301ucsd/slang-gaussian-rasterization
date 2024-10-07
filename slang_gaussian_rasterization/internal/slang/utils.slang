@@ -356,6 +356,11 @@ Splat_3D_AlphaBlend load_splat3d_alphablend(int32_t g_idx,
     return { g_xyz3d_vs, g_rgb, g_opacity, g_opacity_volr, g_inv_cov3d };
 }
 
+[Differentiable]
+float3 load_xyz3d_abs(int32_t g_idx,
+                      DiffTensorView xyz) {        
+    return read_t3_float3(g_idx, xyz);
+}
 
 [Differentiable]
 float compute_maxpdf_ray(float3 mu,
@@ -417,6 +422,44 @@ float4 evaluate_splat_volr(Splat_3D_AlphaBlend g,
     
     return float4(premult_rgb, alpha);
 }
+
+[Differentiable]
+float evaluate_splat_tomo(Splat_3D_AlphaBlend g,
+                           float2 pix_coord,
+                           uint32_t H,
+                           uint32_t W,
+                           no_diff float fovx,
+                           no_diff float fovy)
+{
+
+    float3 g_xyz = g.xyz3d_vs;
+    float3 g_rgb = g.rgb;
+    float g_opacity = g.opacity;
+    float g_opacity_volr = g.opacity_volr;
+    float3x3 g_inv_cov3d = g.inv_cov3d_vs;
+    // TODO: Till d = normalize(d), bring this computation outside of this function, probably causing slowdown.
+    float tan_half_fovx = tan(fovx / 2.0f);
+    float tan_half_fovy = tan(fovy / 2.0f);
+    float fx = W / (2.0f * tan_half_fovx);
+    float fy = H / (2.0f * tan_half_fovy);
+    float3 d = { (pix_coord.x - W / 2.0f) / fx, (pix_coord.y - H / 2.0f) / fy, 1.0f };
+    d = normalize(d);
+
+    float denominator = max(eps, dot(d, mul(g_inv_cov3d, d)));
+    float numerator = dot(g_xyz, mul(g_inv_cov3d, d));
+    float tmax = max(numerator / denominator, 0.0f);
+
+    float3 diff = tmax * d - g_xyz;
+    float power = -0.5 * dot(diff, mul(g_inv_cov3d, diff));
+    float pdfmax = exp(power);
+
+    float sigma_d = sqrt(1.0f / denominator);
+    // float alpha = g_opacity * (1.0f - exp(-sqrt(2 * 3.14159f) * g_opacity_volr * sigma_d * pdfmax));
+    float alpha = sqrt(2 * 3.14159f) * g_opacity_volr * sigma_d * pdfmax;
+    
+    return alpha;
+}
+
 
 [Differentiable]
 float3x3 get_covariance_from_quat_scales(float4 q, float3 s) {
