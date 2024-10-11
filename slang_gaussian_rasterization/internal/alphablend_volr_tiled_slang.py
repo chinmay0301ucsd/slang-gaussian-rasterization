@@ -85,7 +85,7 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
         n_contributors = torch.zeros((render_grid.image_height, 
                                       render_grid.image_width, 1),
                                      dtype=torch.int32, device=device)
-
+        # xyz_grad_abs = torch.zeros_like(xyz3d_vs)
         assert (render_grid.tile_height, render_grid.tile_width) in slang_modules.alpha_blend_shaders, (
             'Alpha Blend Shader was not compiled for this tile'
             f' {render_grid.tile_height}x{render_grid.tile_width} configuration, available configurations:'
