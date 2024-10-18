@@ -80,15 +80,23 @@ void vertex_shader(DiffTensorView xyz_ws,
         return;
     }
     float det = compute_det(splat.cov_vs);
+    
+    if (det == 0.0f)
+        return;
     // Computing 3D covariance as part of the vertex shader and exporting it for future use. 
     // Removing the opacity based scaling factor before these steps, so that actual covariance isn't affected. 
     gauss.scales = gauss.scales / scalef;
     float3x3 cov3d_ws = get_covariance_from_quat_scales(gauss.rotations, gauss.scales);
     float3x3 cov3d_vs = covariance_3dw_to_3dv(cam, cov3d_ws);
-    float size = gauss.scales.x * gauss.scales.y * gauss.scales.z;
+
+    // float invdet3d = 1.0f / compute_det3x3(cov3d_vs);
+    // if (isnan(invdet3d)) {
+    //     return;
+    // }
 
     // printf("invdet3d: %f det: %f\n", 1.0f/det3d, det);
     float3x3 inv_cov3d_vs = inverse3x3(cov3d_vs);
+    
     float3 xyz3d_cam = geom_transform_points2(gauss.xyz_ws, cam.world_view_transform);
     float radius = splat_radius(splat.cov_vs, det);
 

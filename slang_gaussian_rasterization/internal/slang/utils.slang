@@ -241,7 +241,18 @@ float3x3 inverse3x3(float3x3 M)
                 M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) +
                 M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]);
 
+    // Add a small epsilon to avoid division by zero
+    float epsilon = 1e-10;
     float invDet = 1.0 / det;
+    // float invDet = 1.0 / (det + epsilon);
+
+    // // Check if the determinant is close to zero
+    // if (abs(det) < epsilon) {
+    //     // Return identity matrix if the input is singular
+    //     return float3x3(1.0, 0.0, 0.0,
+    //                     0.0, 1.0, 0.0,
+    //                     0.0, 0.0, 1.0);
+    // }
 
     float3x3 minv;
     minv[0][0] = (M[1][1] * M[2][2] - M[2][1] * M[1][2]) * invDet;
@@ -411,11 +422,11 @@ float4 evaluate_splat_volr(Splat_3D_AlphaBlend g,
     float sigma_d = sqrt(1.0f / (denominator + eps));
     // float alpha = g_opacity * (1.0f - exp(-sqrt(2 * 3.14159f) * g_opacity_volr * sigma_d * pdfmax));
     float alpha = 1.0f - exp(-sqrt(2 * 3.14159f) * g_opacity_volr * sigma_d * pdfmax);
-    /*float3 mu_norm = normalize(g_xyz);
-    float denominator_scale = max(eps, dot(mu_norm, mul(g_inv_cov3d, mu_norm)));
-    float sigma_d_scale = sqrt(1.0f / denominator_scale);
-    float norm_scale = 1.0f - exp(-sqrt(2*3.14159f) * g_opacity_volr * sigma_d_scale);
-    alpha = alpha / norm_scale;*/
+    // float3 mu_norm = normalize(g_xyz);
+    // float denominator_scale = max(eps, dot(mu_norm, mul(g_inv_cov3d, mu_norm)));
+    // float sigma_d_scale = sqrt(1.0f / denominator_scale);
+    // float norm_scale = 1.0f - exp(-sqrt(2*3.14159f) * g_opacity_volr * sigma_d_scale);
+    // alpha = alpha / norm_scale;
 
     alpha = min(0.99f, alpha);
     float3 premult_rgb = g_rgb * alpha;

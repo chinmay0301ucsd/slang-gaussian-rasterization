@@ -32,7 +32,8 @@ def render_alpha_blend_volr_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
                              tile_height=tile_size,
                              tile_width=tile_size)
     
-    scale3d_factor = torch.sqrt(torch.max(2 * torch.log(opacity_volr / 0.01) / 9.0, torch.ones_like(opacity_volr)))
+    # scale3d_factor = torch.sqrt(torch.max(2 * torch.log(opacity_volr / 0.01) / 9.0, torch.ones_like(opacity_volr)))
+    scale3d_factor = torch.ones_like(opacity_volr)
     sorted_gauss_idx, tile_ranges, radii, xyz_vs, xyz3d_cam, inv_cov3d_vs, inv_cov3d_vs, rgb  = vertex_and_tile_shader(xyz_ws,
                                                                                            rotations,
                                                                                            scales,
