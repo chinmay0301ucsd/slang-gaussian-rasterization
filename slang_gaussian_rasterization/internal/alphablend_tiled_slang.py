@@ -44,7 +44,8 @@ def render_alpha_blend_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
                                                                                            fovy,
                                                                                            fovx,
                                                                                            render_grid)
-   
+    # print("num gaussians on all tiles", len(sorted_gauss_idx))
+    # print("num gaussians per tile", len(sorted_gauss_idx) / radii.shape[0])
     # retain_grad fails if called with torch.no_grad() under evaluation
     try:
         xyz_vs.retain_grad()

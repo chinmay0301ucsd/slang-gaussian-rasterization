@@ -51,12 +51,14 @@ float4 alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
                    uint32_t tile_idx_end,
                    uint32_t tile_height,
                    uint32_t tile_width,
-                   no_diff float fovx,
-                   no_diff float fovy,
+                   no_diff float fx,
+                   no_diff float fy,
                    uint32_t H,
                    uint32_t W)
 {
     float2 center_pix_coord = pix_coord;
+    float3 dir = {(center_pix_coord.x - W/2.0f)/fx, (center_pix_coord.y - H/2.0f)/fy, 1.0f };
+    dir = normalize(dir);
     float4 curr_pixel_state = float4(0.f, 0.f, 0.f, 1.f);
     uint32_t block_size = tile_height * tile_width;
     bool is_inside = (pix_coord.x < W && pix_coord.y < H);
@@ -83,9 +85,10 @@ float4 alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
             {
                 local_n_contrib++;
                 Splat_3D_AlphaBlend g = collected_splats[j];
-                float4 gauss_rgba = evaluate_splat_volr(g, center_pix_coord, H, W, fovx, fovy);
+                float4 gauss_rgba = evaluate_splat_volr(g, dir, H, W, fx, fy);
                 
-                // Skip Splats that have a tiny contribution.
+                // TODO: Uncomment this!!
+                //Skip Splats that have a tiny contribution.
                 if (gauss_rgba.a < 1.0f / 255.0f)
                     continue;
 
@@ -121,8 +124,8 @@ void bwd_alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
                      uint32_t tile_idx_end,
                      uint32_t tile_height,
                      uint32_t tile_width,
-                     no_diff float fovx,
-                     no_diff float fovy,
+                     no_diff float fx,
+                     no_diff float fy,
                      uint32_t H,
                      uint32_t W,
                      float4 d_current_pixel_state)
@@ -146,8 +149,9 @@ void bwd_alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
     }
 
     float2 center_pix_coord = pix_coord;
-
-    DifferentialPair<float2> dp_center_pix_coord = diffPair(center_pix_coord);
+    float3 dir = {(center_pix_coord.x - W/2.0f)/fx, (center_pix_coord.y - H/2.0f)/fy, 1.0f };
+    dir = normalize(dir);
+    DifferentialPair<float3> dp_dir = diffPair(dir);
 
 
     uint32_t thread_rank = cudaThreadIdx().y * cudaBlockDim().x + cudaThreadIdx().x;
@@ -172,7 +176,7 @@ void bwd_alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
                 uint32_t g_idx = collected_idx[j];
                 Splat_3D_AlphaBlend g = collected_splats[j];
 
-                float4 gauss_rgba = evaluate_splat_volr(g, center_pix_coord, H, W, fovx, fovy);
+                float4 gauss_rgba = evaluate_splat_volr(g, dir, H, W, fx, fy);
 
                 if (gauss_rgba.a < 1.0f / 255.0f)
                     continue;
@@ -186,7 +190,7 @@ void bwd_alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
                 DifferentialPair<float4> dp_current_pixel_state = diffPair(current_pixel_state);
                 bwd_diff(update_pixel_state)(dp_current_pixel_state, dp_gauss_rgba, d_current_pixel_state);
                 d_current_pixel_state = dp_current_pixel_state.getDifferential();
-                bwd_diff(evaluate_splat_volr)(dp_g, dp_center_pix_coord, H, W, fovx, fovy, dp_gauss_rgba.d);
+                bwd_diff(evaluate_splat_volr)(dp_g, dp_dir, H, W, fx, fy, dp_gauss_rgba.d);
                 bwd_diff(load_splat3d_alphablend)(g_idx, xyz3d_vs, inv_cov3d_vs, opacity, opacity_volr, rgb, dp_g.d);
                 // Accumulate absolute gradients for xyz
                 // xyz_grad_abs[uint2(g_idx, 0)] += abs(dp_g.d.xyz3d_vs.x);
@@ -211,8 +215,8 @@ void splat_volr_tiled(TensorView<int32_t> sorted_gauss_idx,
                  DiffTensorView rgb,
                  DiffTensorView output_img,
                  TensorView<int32_t> n_contributors,
-                 no_diff float fovx,
-                 no_diff float fovy,
+                 no_diff float fx,
+                 no_diff float fy,
                  int grid_height,
                  int grid_width,
                  int tile_height,
@@ -241,8 +245,8 @@ void splat_volr_tiled(TensorView<int32_t> sorted_gauss_idx,
                                      tile_idx_end,
                                      tile_height,
                                      tile_width,
-                                     fovx,
-                                     fovy,
+                                     fx,
+                                     fy,
                                      output_img.size(0),
                                      output_img.size(1));
 

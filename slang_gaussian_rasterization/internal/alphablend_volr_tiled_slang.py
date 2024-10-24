@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import math
 import torch
 from slang_gaussian_rasterization.internal.render_grid import RenderGrid
 import slang_gaussian_rasterization.internal.slang.slang_modules as slang_modules
@@ -92,7 +92,10 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
             f' {render_grid.tile_height}x{render_grid.tile_width} configuration, available configurations:'
             f' {slang_modules.alpha_blend_shaders.keys()}'
         )
-
+        tan_half_fovx = math.tan(fovx / 2.0)
+        tan_half_fovy = math.tan(fovy / 2.0)
+        fx = render_grid.image_width / (2.0 * tan_half_fovx)
+        fy = render_grid.image_height / (2.0 * tan_half_fovy)
         alpha_blend_tile_shader = slang_modules.alpha_blend_volr_shaders[(render_grid.tile_height, render_grid.tile_width)]
         splat_kernel_with_args = alpha_blend_tile_shader.splat_volr_tiled(
             sorted_gauss_idx=sorted_gauss_idx,
@@ -104,8 +107,8 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
             rgb=rgb, 
             output_img=output_img,
             n_contributors=n_contributors,
-            fovx=fovx,
-            fovy=fovy,
+            fx=fx,
+            fy=fy,
             grid_height=render_grid.grid_height,
             grid_width=render_grid.grid_width,
             tile_height=render_grid.tile_height,
@@ -122,8 +125,8 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
                               xyz3d_vs, inv_cov3d_vs, opacity, opacity_volr, rgb, 
                               output_img, n_contributors)
         ctx.render_grid = render_grid
-        ctx.fovx = fovx
-        ctx.fovy = fovy
+        ctx.fx = fx
+        ctx.fy = fy
         return output_img
 
     @staticmethod
@@ -132,7 +135,7 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
          xyz3d_vs, inv_cov3d_vs, opacity, opacity_volr, rgb, 
          output_img, n_contributors) = ctx.saved_tensors
         render_grid = ctx.render_grid
-        fovx, fovy = ctx.fovx, ctx.fovy
+        fx, fy = ctx.fx, ctx.fy
         xyz3d_vs_grad = torch.zeros_like(xyz3d_vs)
         inv_cov3d_vs_grad = torch.zeros_like(inv_cov3d_vs)
         opacity_grad = torch.zeros_like(opacity)
@@ -158,8 +161,8 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
             rgb=(rgb, rgb_grad),
             output_img=(output_img, grad_output_img),
             n_contributors=n_contributors,
-            fovx=fovx,
-            fovy=fovy,
+            fx=fx,
+            fy=fy,
             grid_height=render_grid.grid_height,
             grid_width=render_grid.grid_width,
             tile_height=render_grid.tile_height,

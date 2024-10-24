@@ -98,6 +98,7 @@ void vertex_shader(DiffTensorView xyz_ws,
     float3x3 inv_cov3d_vs = inverse3x3(cov3d_vs);
     
     float3 xyz3d_cam = geom_transform_points2(gauss.xyz_ws, cam.world_view_transform);
+    // TODO: REVERSE THISSSSS!!!!
     float radius = splat_radius(splat.cov_vs, det);
 
 

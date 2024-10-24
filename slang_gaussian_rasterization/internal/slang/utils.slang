@@ -391,11 +391,11 @@ float compute_maxpdf_ray(float3 mu,
 
 [Differentiable]
 float4 evaluate_splat_volr(Splat_3D_AlphaBlend g, 
-                      float2 pix_coord,
+                      float3 d,
                       uint32_t H,
                       uint32_t W, 
-                      no_diff float fovx,
-                      no_diff float fovy)
+                      no_diff float fx,
+                      no_diff float fy)
 {
 
     float3 g_xyz = g.xyz3d_vs;
@@ -404,12 +404,13 @@ float4 evaluate_splat_volr(Splat_3D_AlphaBlend g,
     float g_opacity_volr = g.opacity_volr;
     float3x3 g_inv_cov3d = g.inv_cov3d_vs;
     // TODO: Till d = normalize(d), bring this computation outside of this function, probably causing slowdown.
-    float tan_half_fovx = tan(fovx / 2.0f);
-    float tan_half_fovy = tan(fovy / 2.0f);
-    float fx = W / (2.0f * tan_half_fovx);
-    float fy = H / (2.0f * tan_half_fovy);
-    float3 d = {(pix_coord.x - W/2.0f)/fx, (pix_coord.y - H/2.0f)/fy, 1.0f };
-    d = normalize(d);
+    // float tan_half_fovx = tan(fovx / 2.0f);
+    // float tan_half_fovy = tan(fovy / 2.0f);
+    // float fx = W / (2.0f * tan_half_fovx);
+    // float fy = H / (2.0f * tan_half_fovy);
+    // float3 d = {(pix_coord.x - W/2.0f)/fx, (pix_coord.y - H/2.0f)/fy, 1.0f };
+    // d = normalize(d);
+    // d = d / (sqrt(dot(d, d)));
 
     float denominator = max(eps, dot(d, mul(g_inv_cov3d, d)));
     float numerator = dot(g_xyz, mul(g_inv_cov3d, d));
@@ -420,8 +421,17 @@ float4 evaluate_splat_volr(Splat_3D_AlphaBlend g,
     float pdfmax = exp(power);
 
     float sigma_d = sqrt(1.0f / (denominator + eps));
-    // float alpha = g_opacity * (1.0f - exp(-sqrt(2 * 3.14159f) * g_opacity_volr * sigma_d * pdfmax));
-    float alpha = 1.0f - exp(-sqrt(2 * 3.14159f) * g_opacity_volr * sigma_d * pdfmax);
+    // sqrt(2 * 3.14159) = 2.506
+    float alpha = 1.0f - exp(-2.506f * g_opacity_volr * sigma_d * pdfmax);
+
+
+    // float power = -0.5 * dot(d, mul(g_inv_cov3d, d));
+    // float power = -0.5f * (g_inv_cov3d[0][0] * d.x * d.x +
+    //                       g_inv_cov3d[1][1] * d.y * d.y + (g_inv_cov3d[0][1] + g_inv_cov3d[1][0]) * d.x * d.y);
+    // float alpha = min(0.99f, g_opacity * exp(power));
+
+    //float alpha = tmax;
+    // float alpha = 1.0f; 
     // float3 mu_norm = normalize(g_xyz);
     // float denominator_scale = max(eps, dot(mu_norm, mul(g_inv_cov3d, mu_norm)));
     // float sigma_d_scale = sqrt(1.0f / denominator_scale);
