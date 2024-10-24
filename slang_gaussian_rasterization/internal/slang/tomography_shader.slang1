@@ -55,6 +55,8 @@ float alpha_blend_tomo(TensorView<int32_t> sorted_gauss_idx,
                    uint32_t W)
 {
     float2 center_pix_coord = pix_coord;
+    // float3 dir = {(center_pix_coord.x - W/2.0f)/fx, (center_pix_coord.y - H/2.0f)/fy, 1.0f };
+    // dir = normalize(dir);
     float curr_pixel_state = 0.0f; //float4(0.f, 0.f, 0.f, 1.f);
     uint32_t block_size = tile_height * tile_width;
     bool is_inside = (pix_coord.x < W && pix_coord.y < H);
@@ -184,7 +186,7 @@ void bwd_alpha_blend_tomo(TensorView<int32_t> sorted_gauss_idx,
                 DifferentialPair<float> dp_current_pixel_state = diffPair(current_pixel_state);
                 bwd_diff(update_pixel_tomo_state)(dp_current_pixel_state, dp_alpha, d_current_pixel_state);
                 d_current_pixel_state = dp_current_pixel_state.getDifferential();
-                bwd_diff(evaluate_splat_volr)(dp_g, dp_center_pix_coord, H, W, fovx, fovy, dp_alpha.d);
+                bwd_diff(evaluate_splat_tomo)(dp_g, dp_center_pix_coord, H, W, fovx, fovy, dp_alpha.d);
                 bwd_diff(load_splat3d_alphablend)(g_idx, xyz3d_vs, inv_cov3d_vs, opacity, opacity_volr, rgb, dp_g.d);
             }
         }
