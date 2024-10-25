@@ -57,7 +57,7 @@ float4 alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
                    uint32_t W)
 {
     float2 center_pix_coord = pix_coord;
-    float3 dir = {(center_pix_coord.x - W/2.0f)/fx, (center_pix_coord.y - H/2.0f)/fy, 1.0f };
+    float3 dir = {(center_pix_coord.x - W/2.0f + 0.5f)/fx, (center_pix_coord.y - H/2.0f + 0.5f)/fy, 1.0f };
     dir = normalize(dir);
     float4 curr_pixel_state = float4(0.f, 0.f, 0.f, 1.f);
     uint32_t block_size = tile_height * tile_width;
@@ -149,7 +149,7 @@ void bwd_alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
     }
 
     float2 center_pix_coord = pix_coord;
-    float3 dir = {(center_pix_coord.x - W/2.0f)/fx, (center_pix_coord.y - H/2.0f)/fy, 1.0f };
+    float3 dir = {(center_pix_coord.x - W/2.0f + 0.5f)/fx, (center_pix_coord.y - H/2.0f + 0.5f)/fy, 1.0f };
     dir = normalize(dir);
     DifferentialPair<float3> dp_dir = diffPair(dir);
 

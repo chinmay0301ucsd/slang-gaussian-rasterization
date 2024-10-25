@@ -499,3 +499,24 @@ float3x3 get_covariance_from_quat_scales(float4 q, float3 s) {
 
     return mul(L, transpose(L));
 }
+
+[Differentiable]
+float3x3 get_inverse_covariance_from_quat_scales(float4 q, float3 s) {
+    float r = q[0], x = q[1], y = q[2], z = q[3];
+
+    float3x3 rotation_matrix = float3x3(
+        1 - 2 * (y * y + z * z), 2 * (x * y - r * z), 2 * (x * z + r * y),
+        2 * (x * y + r * z), 1 - 2 * (x * x + z * z), 2 * (y * z - r * x),
+        2 * (x * z - r * y), 2 * (y * z + r * x), 1 - 2 * (x * x + y * y));
+
+    // float3x3 scales_matrix = float3x3(min(1000.0f, 1.0f / s[0]), 0, 0,
+    //                                   0, min(1000.0f, 1.0f / s[1]), 0,
+    //                                   0, 0, min(1000.0f, 1.0f / s[2]));
+    
+    float3x3 scales_matrix = float3x3(1.0f / s[0], 0, 0,
+    0, 1.0f / s[1], 0,
+    0, 0, 1.0f / s[2]);
+    float3x3 L = mul(rotation_matrix, scales_matrix);
+
+    return mul(L, transpose(L));
+}
