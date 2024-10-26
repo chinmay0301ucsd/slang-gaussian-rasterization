@@ -46,8 +46,10 @@ def render_alpha_blend_volr_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
                                                                                            fovy,
                                                                                            fovx,
                                                                                            render_grid)
-   
+    
+    
     # retain_grad fails if called with torch.no_grad() under evaluation
+    abs_xyz_var = torch.zeros_like(xyz_ws, requires_grad=True)
     try:
         xyz_vs.retain_grad()
     except:
@@ -63,14 +65,17 @@ def render_alpha_blend_volr_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
         rgb,
         render_grid,
         fovx,
-        fovy
+        fovy,
+        abs_xyz_var
         )
+    ## Retains grad for absolute values of xyz (as done in absGS paper)
     
     render_pkg = {
         'render': image_rgb.permute(2,0,1)[:3, ...],
         'viewspace_points': xyz_vs,
         'visibility_filter': radii > 0,
         'radii': radii,
+        'abs_xyz_var': abs_xyz_var,
     }
 
     return render_pkg
@@ -79,14 +84,13 @@ def render_alpha_blend_volr_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
 class AlphaBlendVolrTiledRender(torch.autograd.Function):
     @staticmethod
     def forward(ctx, sorted_gauss_idx, tile_ranges, xyz3d_vs, inv_cov3d_vs,
-                 opacity, opacity_volr, rgb, render_grid, fovx, fovy, device="cuda"):
+                 opacity, opacity_volr, rgb, render_grid, fovx, fovy, abs_xyz_var, device="cuda"):
         output_img = torch.zeros((render_grid.image_height, 
                                   render_grid.image_width, 4), 
                                  device=device)
         n_contributors = torch.zeros((render_grid.image_height, 
                                       render_grid.image_width, 1),
                                      dtype=torch.int32, device=device)
-        # xyz_grad_abs = torch.zeros_like(xyz3d_vs)
         assert (render_grid.tile_height, render_grid.tile_width) in slang_modules.alpha_blend_shaders, (
             'Alpha Blend Shader was not compiled for this tile'
             f' {render_grid.tile_height}x{render_grid.tile_width} configuration, available configurations:'
@@ -107,6 +111,7 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
             rgb=rgb, 
             output_img=output_img,
             n_contributors=n_contributors,
+            grad_abs=abs_xyz_var, ## NOTE: remove this line if it doesn't work
             fx=fx,
             fy=fy,
             grid_height=render_grid.grid_height,
@@ -123,7 +128,7 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
 
         ctx.save_for_backward(sorted_gauss_idx, tile_ranges,
                               xyz3d_vs, inv_cov3d_vs, opacity, opacity_volr, rgb, 
-                              output_img, n_contributors)
+                              output_img, n_contributors, abs_xyz_var)
         ctx.render_grid = render_grid
         ctx.fx = fx
         ctx.fy = fy
@@ -133,10 +138,11 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
     def backward(ctx, grad_output_img):
         (sorted_gauss_idx, tile_ranges, 
          xyz3d_vs, inv_cov3d_vs, opacity, opacity_volr, rgb, 
-         output_img, n_contributors) = ctx.saved_tensors
+         output_img, n_contributors, abs_xyz_var) = ctx.saved_tensors
         render_grid = ctx.render_grid
         fx, fy = ctx.fx, ctx.fy
         xyz3d_vs_grad = torch.zeros_like(xyz3d_vs)
+        abs_xyz_grad = torch.zeros_like(abs_xyz_var) ## NOTE: remove this line if it doesn't work
         inv_cov3d_vs_grad = torch.zeros_like(inv_cov3d_vs)
         opacity_grad = torch.zeros_like(opacity)
         opacity_volr_grad = torch.zeros_like(opacity_volr)
@@ -161,6 +167,7 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
             rgb=(rgb, rgb_grad),
             output_img=(output_img, grad_output_img),
             n_contributors=n_contributors,
+            grad_abs=abs_xyz_grad, ## NOTE: remove this line if it doesn't work
             fx=fx,
             fy=fy,
             grid_height=render_grid.grid_height,
@@ -175,4 +182,5 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
             gridSize=(render_grid.grid_width, 
                       render_grid.grid_height, 1)
         )
-        return None, None, xyz3d_vs_grad, inv_cov3d_vs_grad, opacity_grad, opacity_volr_grad, rgb_grad, None, None, None
+
+        return None, None, xyz3d_vs_grad, inv_cov3d_vs_grad, opacity_grad, opacity_volr_grad, rgb_grad, None, None, None, abs_xyz_grad

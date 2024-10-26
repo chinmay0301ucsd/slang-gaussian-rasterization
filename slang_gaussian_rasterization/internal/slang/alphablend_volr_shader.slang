@@ -46,6 +46,7 @@ float4 alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
                    DiffTensorView rgb,
                    DiffTensorView final_pixel_state,
                    TensorView<int32_t> n_contributors,
+                   TensorView<float> grad_abs,
                    uint32_t2 pix_coord,
                    uint32_t tile_idx_start,
                    uint32_t tile_idx_end,
@@ -119,6 +120,7 @@ void bwd_alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
                      DiffTensorView rgb,
                      DiffTensorView final_pixel_state,
                      TensorView<int32_t> n_contributors,
+                     TensorView<float> grad_abs,
                      uint32_t2 pix_coord,
                      uint32_t tile_idx_start,
                      uint32_t tile_idx_end,
@@ -193,9 +195,10 @@ void bwd_alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
                 bwd_diff(evaluate_splat_volr)(dp_g, dp_dir, H, W, fx, fy, dp_gauss_rgba.d);
                 bwd_diff(load_splat3d_alphablend)(g_idx, xyz3d_vs, inv_cov3d_vs, opacity, opacity_volr, rgb, dp_g.d);
                 // Accumulate absolute gradients for xyz
-                // xyz_grad_abs[uint2(g_idx, 0)] += abs(dp_g.d.xyz3d_vs.x);
-                // xyz_grad_abs[uint2(g_idx, 1)] += abs(dp_g.d.xyz3d_vs.y);
-                // xyz_grad_abs[uint2(g_idx, 2)] += abs(dp_g.d.xyz3d_vs.z);
+                float oldvalx, oldvaly, oldvalz;
+                grad_abs.InterlockedAdd(uint2(g_idx, 0), abs(dp_g.d.xyz3d_vs.x), oldvalx);
+                grad_abs.InterlockedAdd(uint2(g_idx, 1), abs(dp_g.d.xyz3d_vs.y), oldvaly);
+                grad_abs.InterlockedAdd(uint2(g_idx, 2), abs(dp_g.d.xyz3d_vs.z), oldvalz);
             }
         }
         splats_left_to_process -= block_size;
@@ -215,6 +218,7 @@ void splat_volr_tiled(TensorView<int32_t> sorted_gauss_idx,
                  DiffTensorView rgb,
                  DiffTensorView output_img,
                  TensorView<int32_t> n_contributors,
+                 TensorView<float> grad_abs,
                  no_diff float fx,
                  no_diff float fy,
                  int grid_height,
@@ -240,6 +244,7 @@ void splat_volr_tiled(TensorView<int32_t> sorted_gauss_idx,
                                      rgb,
                                      output_img,
                                      n_contributors,
+                                     grad_abs,
                                      pix_coord,
                                      tile_idx_start,
                                      tile_idx_end,
