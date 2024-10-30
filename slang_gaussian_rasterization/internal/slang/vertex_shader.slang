@@ -58,7 +58,8 @@ void vertex_shader(DiffTensorView xyz_ws,
                    uint grid_height,
                    uint grid_width,
                    uint tile_height,
-                   uint tile_width)
+                   uint tile_width,
+                   bool softplus_rgb)
 {
     uint32_t g_idx = cudaBlockIdx().x * cudaBlockDim().x + cudaThreadIdx().x;
 
@@ -75,7 +76,7 @@ void vertex_shader(DiffTensorView xyz_ws,
     }
     // TODO: Add code here to compute scaling factor in alpha volr for each vertex.
     gauss.scales = gauss.scales * scalef;
-    Splat_2D_Vertex splat = project_gaussian_to_camera(gauss, cam, active_sh);
+    Splat_2D_Vertex splat = project_gaussian_to_camera(gauss, cam, active_sh, softplus_rgb);
     if (splat.xyz_vs.z <= 0.2) {
         return;
     }

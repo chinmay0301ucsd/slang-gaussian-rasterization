@@ -284,12 +284,13 @@ Splat_2D_Vertex load_splat_vertex(int32_t g_idx,
 }
 
 [Differentiable]
-Splat_2D_Vertex project_gaussian_to_camera(Gaussian_3D g, Camera cam, uint active_sh) {
+Splat_2D_Vertex project_gaussian_to_camera(Gaussian_3D g, Camera cam, uint active_sh, bool softplus_rgb) {
     float3 xyz_vs = project_point(g.xyz_ws, cam);
     if (xyz_vs.z <= 0.2) {
         return {float3(0.0), float3(0.0), float2x2(0.0)};
     }
-    float3 rgb = compute_color_from_sh_coeffs(g.sh_coeffs, g.xyz_ws, cam.position, active_sh);
+    float3 rgb = softplus_rgb ? compute_color_from_sh_coeffs_softplus(g.sh_coeffs, g.xyz_ws, cam.position, active_sh)
+                              : compute_color_from_sh_coeffs(g.sh_coeffs, g.xyz_ws, cam.position, active_sh);
     float3x3 cov_ws = get_covariance_from_quat_scales(g.rotations, g.scales);
     float2x2 cov_vs = covariance_3d_to_2d(cam, g.xyz_ws, cov_ws);
 
@@ -403,14 +404,6 @@ float4 evaluate_splat_volr(Splat_3D_AlphaBlend g,
     float g_opacity = g.opacity;
     float g_opacity_volr = g.opacity_volr;
     float3x3 g_inv_cov3d = g.inv_cov3d_vs;
-    // TODO: Till d = normalize(d), bring this computation outside of this function, probably causing slowdown.
-    // float tan_half_fovx = tan(fovx / 2.0f);
-    // float tan_half_fovy = tan(fovy / 2.0f);
-    // float fx = W / (2.0f * tan_half_fovx);
-    // float fy = H / (2.0f * tan_half_fovy);
-    // float3 d = {(pix_coord.x - W/2.0f)/fx, (pix_coord.y - H/2.0f)/fy, 1.0f };
-    // d = normalize(d);
-    // d = d / (sqrt(dot(d, d)));
 
     float denominator = max(eps, dot(d, mul(g_inv_cov3d, d)));
     float numerator = dot(g_xyz, mul(g_inv_cov3d, d));
@@ -424,14 +417,6 @@ float4 evaluate_splat_volr(Splat_3D_AlphaBlend g,
     // sqrt(2 * 3.14159) = 2.506
     float alpha = 1.0f - exp(-2.506f * g_opacity_volr * sigma_d * pdfmax);
 
-
-    // float power = -0.5 * dot(d, mul(g_inv_cov3d, d));
-    // float power = -0.5f * (g_inv_cov3d[0][0] * d.x * d.x +
-    //                       g_inv_cov3d[1][1] * d.y * d.y + (g_inv_cov3d[0][1] + g_inv_cov3d[1][0]) * d.x * d.y);
-    // float alpha = min(0.99f, g_opacity * exp(power));
-
-    //float alpha = tmax;
-    // float alpha = 1.0f; 
     // float3 mu_norm = normalize(g_xyz);
     // float denominator_scale = max(eps, dot(mu_norm, mul(g_inv_cov3d, mu_norm)));
     // float sigma_d_scale = sqrt(1.0f / denominator_scale);
@@ -514,8 +499,8 @@ float3x3 get_inverse_covariance_from_quat_scales(float4 q, float3 s) {
     //                                   0, 0, min(1000.0f, 1.0f / s[2]));
     
     float3x3 scales_matrix = float3x3(1.0f / s[0], 0, 0,
-    0, 1.0f / s[1], 0,
-    0, 0, 1.0f / s[2]);
+                                      0, 1.0f / s[1], 0,
+                                      0, 0, 1.0f / s[2]);
     float3x3 L = mul(rotation_matrix, scales_matrix);
 
     return mul(L, transpose(L));

@@ -25,7 +25,7 @@ def set_grad(var):
 def render_alpha_blend_tiles_slang_raw(xyz_ws, rotations, scales, opacity, 
                                        sh_coeffs, active_sh,
                                        world_view_transform, proj_mat, cam_pos,
-                                       fovy, fovx, height, width, tile_size=16):
+                                       fovy, fovx, height, width, softplus_rgb, tile_size=16):
     
     scale3d_factor = torch.ones_like(opacity, device=opacity.device)
     render_grid = RenderGrid(height,
@@ -43,7 +43,8 @@ def render_alpha_blend_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
                                                                                            cam_pos,
                                                                                            fovy,
                                                                                            fovx,
-                                                                                           render_grid)
+                                                                                           render_grid,
+                                                                                           softplus_rgb)
     # print("num gaussians on all tiles", len(sorted_gauss_idx))
     # print("num gaussians per tile", len(sorted_gauss_idx) / radii.shape[0])
     # retain_grad fails if called with torch.no_grad() under evaluation

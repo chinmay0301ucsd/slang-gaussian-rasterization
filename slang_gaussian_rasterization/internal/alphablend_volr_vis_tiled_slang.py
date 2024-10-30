@@ -17,13 +17,12 @@ from slang_gaussian_rasterization.internal.render_grid import RenderGrid
 import slang_gaussian_rasterization.internal.slang.slang_modules as slang_modules
 from slang_gaussian_rasterization.internal.tile_shader_slang import vertex_and_tile_shader
 
-
 def set_grad(var):
     def hook(grad):
         var.grad = grad
     return hook
 
-def render_alpha_blend_volr_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
+def render_visualize_volr_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
                                        opacity_volr, sh_coeffs, active_sh,
                                        world_view_transform, proj_mat, cam_pos,
                                        fovy, fovx, height, width, softplus_rgb, tile_size=16):
@@ -103,7 +102,7 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
         fx = render_grid.image_width / (2.0 * tan_half_fovx)
         fy = render_grid.image_height / (2.0 * tan_half_fovy)
         alpha_blend_tile_shader = slang_modules.alpha_blend_volr_shaders[(render_grid.tile_height, render_grid.tile_width)]
-        splat_kernel_with_args = alpha_blend_tile_shader.splat_volr_tiled(
+        splat_kernel_with_args = alpha_blend_tile_shader.visualize_volr_tiled(
             sorted_gauss_idx=sorted_gauss_idx,
             tile_ranges=tile_ranges,
             xyz3d_vs=xyz3d_vs, 
