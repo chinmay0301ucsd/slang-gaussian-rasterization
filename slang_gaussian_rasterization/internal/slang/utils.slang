@@ -32,9 +32,9 @@ float read_t1_float_wavesum(uint32_t idx, DiffTensorView t1)
 void bwd_read_t1_float_wavesum(uint32_t idx, DiffTensorView t1, float d_output)
 {
     float total_d_output = WaveActiveSum(d_output);
-    if (WaveIsFirstLane())
-        float oldVal;
-        t1.diff.diff.InterlockedAdd(idx, total_d_output, oldVal);
+    if (WaveIsFirstLane()) {
+        bwd_diff(read_t1_float)(idx, t1, total_d_output);
+    }
 }
 
 [Differentiable]
@@ -59,10 +59,7 @@ void bwd_read_t3_float3_wavesum(uint32_t idx, DiffTensorView t3, float3 d_output
     float3 total_d_output = WaveActiveSum(d_output);
     if (WaveIsFirstLane())
     {
-        float oldVal;
-        t3.diff.diff.InterlockedAdd(uint2(idx, 0), total_d_output.x, oldVal);
-        t3.diff.diff.InterlockedAdd(uint2(idx, 1), total_d_output.y, oldVal);
-        t3.diff.diff.InterlockedAdd(uint2(idx, 2), total_d_output.z, oldVal);
+        bwd_diff(read_t3_float3)(idx, t3, total_d_output);
     }
 }
 
@@ -92,6 +89,26 @@ float2x2 read_t2x2_float2x2(uint32_t idx, DiffTensorView t2x2)
                     t2x2[uint3(idx, 0, 1)],
                     t2x2[uint3(idx, 1, 1)]);
 }
+
+[BackwardDerivative(bwd_read_t2x2_float2x2_wavesum)]
+[Differentiable]
+float2x2 read_t2x2_float2x2_wavesum(uint32_t idx, DiffTensorView t2x2)
+{
+    return float2x2(t2x2[uint3(idx, 0, 0)],
+                    t2x2[uint3(idx, 1, 0)],
+                    t2x2[uint3(idx, 0, 1)],
+                    t2x2[uint3(idx, 1, 1)]);
+}
+
+
+void bwd_read_t2x2_float2x2_wavesum(uint32_t idx, DiffTensorView t2x2, float2x2 d_output)
+{
+    float2x2 total_d_output = WaveActiveSum(d_output);
+    if (WaveIsFirstLane()) {
+        bwd_diff(read_t2x2_float2x2)(idx, t2x2, total_d_output);
+    }
+}
+
 
 [Differentiable]
 float3x3 read_t3x3_float3x3(uint32_t idx, DiffTensorView t3x3)
@@ -126,16 +143,7 @@ void bwd_read_t3x3_float3x3_wavesum(uint32_t idx, DiffTensorView t3x3, float3x3 
 {
     float3x3 total_d_output = WaveActiveSum(d_output);
     if (WaveIsFirstLane()) {
-        float oldVal;
-        t3x3.diff.diff.InterlockedAdd(uint3(idx, 0, 0), total_d_output[0][0], oldVal);
-        t3x3.diff.diff.InterlockedAdd(uint3(idx, 1, 0), total_d_output[1][0], oldVal);
-        t3x3.diff.diff.InterlockedAdd(uint3(idx, 2, 0), total_d_output[2][0], oldVal);
-        t3x3.diff.diff.InterlockedAdd(uint3(idx, 0, 1), total_d_output[0][1], oldVal);
-        t3x3.diff.diff.InterlockedAdd(uint3(idx, 1, 1), total_d_output[1][1], oldVal);
-        t3x3.diff.diff.InterlockedAdd(uint3(idx, 2, 1), total_d_output[2][1], oldVal);
-        t3x3.diff.diff.InterlockedAdd(uint3(idx, 0, 2), total_d_output[0][2], oldVal);
-        t3x3.diff.diff.InterlockedAdd(uint3(idx, 1, 2), total_d_output[1][2], oldVal);
-        t3x3.diff.diff.InterlockedAdd(uint3(idx, 2, 2), total_d_output[2][2], oldVal);
+        bwd_diff(read_t3x3_float3x3)(idx, t3x3, total_d_output);
     }
 }
 
@@ -383,28 +391,19 @@ Splat_2D_AlphaBlend load_splat_alphablend(int32_t g_idx,
                                           DiffTensorView opacity,
                                           DiffTensorView rgb)
 {
-    float3 g_xyz_vs = read_t3_float3(g_idx, xyz_vs);
-    float3 g_rgb = read_t3_float3(g_idx, rgb);
-    float g_opacity = read_t1_float(g_idx, opacity);
-    float2x2 g_inv_cov = read_t2x2_float2x2(g_idx, inv_cov_vs);
+    float3 g_xyz_vs = read_t3_float3_wavesum(g_idx, xyz_vs);
+    float3 g_rgb = read_t3_float3_wavesum(g_idx, rgb);
+    float g_opacity = read_t1_float_wavesum(g_idx, opacity);
+    float2x2 g_inv_cov = read_t2x2_float2x2_wavesum(g_idx, inv_cov_vs);
+
+    // float3 g_xyz_vs = read_t3_float3(g_idx, xyz_vs);
+    // float3 g_rgb = read_t3_float3(g_idx, rgb);
+    // float g_opacity = read_t1_float(g_idx, opacity);
+    // float2x2 g_inv_cov = read_t2x2_float2x2(g_idx, inv_cov_vs);
 
     return { g_xyz_vs, g_rgb, g_opacity, g_inv_cov };
 }
 
-// void bwd_load_splat_alphablend(int32_t g_idx,
-//                                           DiffTensorView xyz_vs,
-//                                           DiffTensorView inv_cov_vs,
-//                                           DiffTensorView opacity,
-//                                           DiffTensorView rgb,
-//                                           Splat_2D_AlphaBlend d_g)
-// {
-//     // float3 g_xyz_vs = read_t3_float3(g_idx, xyz_vs);
-//     // float3 g_rgb = read_t3_float3(g_idx, rgb);
-//     // float g_opacity = read_t1_float(g_idx, opacity);
-//     // float2x2 g_inv_cov = read_t2x2_float2x2(g_idx, inv_cov_vs);
-
-//     // return { g_xyz_vs, g_rgb, g_opacity, g_inv_cov };
-// }
 
 
 
@@ -449,10 +448,8 @@ Splat_3D_AlphaBlend load_splat3d_alphablend(int32_t g_idx,
 {
     float3 g_xyz3d_vs = read_t3_float3_wavesum(g_idx, xyz3d_vs);
     float3 g_rgb = read_t3_float3_wavesum(g_idx, rgb);
-    // float3 g_x
     float g_opacity = read_t1_float_wavesum(g_idx, opacity);
     float g_opacity_volr = read_t1_float_wavesum(g_idx, opacity_volr);
-    // float3x3 g_inv_cov3d = read_t3x3_float3x3(g_idx, inv_cov3d_vs);
     float3x3 g_inv_cov3d = read_t3x3_float3x3_wavesum(g_idx, inv_cov3d_vs);
 
     return { g_xyz3d_vs, g_rgb, g_opacity, g_opacity_volr, g_inv_cov3d };

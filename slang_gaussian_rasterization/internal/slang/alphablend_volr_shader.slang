@@ -195,10 +195,18 @@ void bwd_alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
                 bwd_diff(evaluate_splat_volr)(dp_g, dp_dir, H, W, fx, fy, dp_gauss_rgba.d);
                 bwd_diff(load_splat3d_alphablend)(g_idx, xyz3d_vs, inv_cov3d_vs, opacity, opacity_volr, rgb, dp_g.d);
                 // Accumulate absolute gradients for xyz
-                float oldvalx, oldvaly, oldvalz;
-                grad_abs.InterlockedAdd(uint2(g_idx, 0), abs(dp_g.d.xyz3d_vs.x), oldvalx);
-                grad_abs.InterlockedAdd(uint2(g_idx, 1), abs(dp_g.d.xyz3d_vs.y), oldvaly);
-                grad_abs.InterlockedAdd(uint2(g_idx, 2), abs(dp_g.d.xyz3d_vs.z), oldvalz);
+                float3 abs_xyz_grad = abs(dp_g.d.xyz3d_vs);
+                float3 total_abs_xyz_grad = WaveActiveSum(abs_xyz_grad);
+                if (WaveIsFirstLane()) {
+                    float oldVal;
+                    grad_abs.InterlockedAdd(uint2(g_idx, 0), total_abs_xyz_grad.x, oldVal);
+                    grad_abs.InterlockedAdd(uint2(g_idx, 1), total_abs_xyz_grad.y, oldVal);
+                    grad_abs.InterlockedAdd(uint2(g_idx, 2), total_abs_xyz_grad.z, oldVal);
+                }
+                // float oldvalx, oldvaly, oldvalz;
+                // grad_abs.InterlockedAdd(uint2(g_idx, 0), abs(dp_g.d.xyz3d_vs.x), oldvalx);
+                // grad_abs.InterlockedAdd(uint2(g_idx, 1), abs(dp_g.d.xyz3d_vs.y), oldvaly);
+                // grad_abs.InterlockedAdd(uint2(g_idx, 2), abs(dp_g.d.xyz3d_vs.z), oldvalz);
             }
         }
         splats_left_to_process -= block_size;
