@@ -439,26 +439,6 @@ struct Splat_3D_AlphaBlend : IDifferentiable
     float3x3 inv_cov3d_vs;
 };
 
-// [BackwardDerivative(bwd_load_splat3d_alphablend)] // Use a custom derivative so that we can hand-write the structure of the reverse loop
-// [Differentiable]
-// Splat_3D_AlphaBlend load_splat3d_alphablend(int32_t g_idx,
-//                                           DiffTensorView xyz3d_vs,
-//                                           DiffTensorView inv_cov3d_vs,
-//                                           DiffTensorView opacity,
-//                                           DiffTensorView opacity_volr,
-//                                           DiffTensorView rgb)
-// {
-//     float3 g_xyz3d_vs = read_t3_float3(g_idx, xyz3d_vs);
-//     float3 g_rgb = read_t3_float3(g_idx, rgb);
-//     // float3 g_x
-//     float g_opacity = read_t1_float(g_idx, opacity);
-//     float g_opacity_volr = read_t1_float(g_idx, opacity_volr);
-//     // float3x3 g_inv_cov3d = read_t3x3_float3x3(g_idx, inv_cov3d_vs);
-//     float3x3 g_inv_cov3d = read_t3x3_float3x3(g_idx, inv_cov3d_vs);
-
-//     return { g_xyz3d_vs, g_rgb, g_opacity, g_opacity_volr, g_inv_cov3d };
-// }
-
 [Differentiable]
 Splat_3D_AlphaBlend load_splat3d_alphablend(int32_t g_idx,
                                           DiffTensorView xyz3d_vs,
@@ -477,23 +457,6 @@ Splat_3D_AlphaBlend load_splat3d_alphablend(int32_t g_idx,
 
     return { g_xyz3d_vs, g_rgb, g_opacity, g_opacity_volr, g_inv_cov3d };
 }
-
-// void bwd_load_splat3d_alphablend(int32_t g_idx,
-//                                           DiffTensorView xyz3d_vs,
-//                                           DiffTensorView inv_cov3d_vs,
-//                                           DiffTensorView opacity,
-//                                           DiffTensorView opacity_volr,
-//                                           DiffTensorView rgb,
-//                                           Splat_3D_AlphaBlend d_g)
-// {
-//     // float total_d_bias = WaveActiveSum(d_output.vals[i]);
-//     float3
-//     if (WaveIsFirstLane())
-//     {
-//         float oldVal;
-//         bias.diff.diff.InterlockedAdd(i, total_d_bias, oldVal);
-//     }
-// }
 
 [Differentiable]
 float3 load_xyz3d_abs(int32_t g_idx,
