@@ -391,15 +391,15 @@ Splat_2D_AlphaBlend load_splat_alphablend(int32_t g_idx,
                                           DiffTensorView opacity,
                                           DiffTensorView rgb)
 {
-    float3 g_xyz_vs = read_t3_float3_wavesum(g_idx, xyz_vs);
-    float3 g_rgb = read_t3_float3_wavesum(g_idx, rgb);
-    float g_opacity = read_t1_float_wavesum(g_idx, opacity);
-    float2x2 g_inv_cov = read_t2x2_float2x2_wavesum(g_idx, inv_cov_vs);
+    // float3 g_xyz_vs = read_t3_float3_wavesum(g_idx, xyz_vs);
+    // float3 g_rgb = read_t3_float3_wavesum(g_idx, rgb);
+    // float g_opacity = read_t1_float_wavesum(g_idx, opacity);
+    // float2x2 g_inv_cov = read_t2x2_float2x2_wavesum(g_idx, inv_cov_vs);
 
-    // float3 g_xyz_vs = read_t3_float3(g_idx, xyz_vs);
-    // float3 g_rgb = read_t3_float3(g_idx, rgb);
-    // float g_opacity = read_t1_float(g_idx, opacity);
-    // float2x2 g_inv_cov = read_t2x2_float2x2(g_idx, inv_cov_vs);
+    float3 g_xyz_vs = read_t3_float3(g_idx, xyz_vs);
+    float3 g_rgb = read_t3_float3(g_idx, rgb);
+    float g_opacity = read_t1_float(g_idx, opacity);
+    float2x2 g_inv_cov = read_t2x2_float2x2(g_idx, inv_cov_vs);
 
     return { g_xyz_vs, g_rgb, g_opacity, g_inv_cov };
 }
@@ -446,11 +446,17 @@ Splat_3D_AlphaBlend load_splat3d_alphablend(int32_t g_idx,
                                           DiffTensorView opacity_volr,
                                           DiffTensorView rgb)
 {
-    float3 g_xyz3d_vs = read_t3_float3_wavesum(g_idx, xyz3d_vs);
-    float3 g_rgb = read_t3_float3_wavesum(g_idx, rgb);
-    float g_opacity = read_t1_float_wavesum(g_idx, opacity);
-    float g_opacity_volr = read_t1_float_wavesum(g_idx, opacity_volr);
-    float3x3 g_inv_cov3d = read_t3x3_float3x3_wavesum(g_idx, inv_cov3d_vs);
+    float3 g_xyz3d_vs = read_t3_float3(g_idx, xyz3d_vs);
+    float3 g_rgb = read_t3_float3(g_idx, rgb);
+    float g_opacity = read_t1_float(g_idx, opacity);
+    float g_opacity_volr = read_t1_float(g_idx, opacity_volr);
+    float3x3 g_inv_cov3d = read_t3x3_float3x3(g_idx, inv_cov3d_vs);
+
+    // float3 g_xyz3d_vs = read_t3_float3_wavesum(g_idx, xyz3d_vs);
+    // float3 g_rgb = read_t3_float3_wavesum(g_idx, rgb);
+    // float g_opacity = read_t1_float_wavesum(g_idx, opacity);
+    // float g_opacity_volr = read_t1_float_wavesum(g_idx, opacity_volr);
+    // float3x3 g_inv_cov3d = read_t3x3_float3x3_wavesum(g_idx, inv_cov3d_vs);
 
     return { g_xyz3d_vs, g_rgb, g_opacity, g_opacity_volr, g_inv_cov3d };
 }
