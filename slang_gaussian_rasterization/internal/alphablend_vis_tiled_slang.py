@@ -53,7 +53,7 @@ def render_visualize_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
     except:
         pass
 
-    image_rgb = AlphaBlendTiledRender.apply(
+    image_rgb, depth = AlphaBlendTiledRender.apply(
         sorted_gauss_idx,
         tile_ranges,
         xyz_vs,
@@ -83,6 +83,9 @@ class AlphaBlendTiledRender(torch.autograd.Function):
         n_contributors = torch.zeros((render_grid.image_height, 
                                       render_grid.image_width, 1),
                                      dtype=torch.int32, device=device)
+        output_depth = torch.zeros((render_grid.image_height, 
+                                    render_grid.image_width, 1),
+                                   device=device)
 
         assert (render_grid.tile_height, render_grid.tile_width) in slang_modules.alpha_blend_shaders, (
             'Alpha Blend Shader was not compiled for this tile'
@@ -97,6 +100,7 @@ class AlphaBlendTiledRender(torch.autograd.Function):
             xyz_vs=xyz_vs, inv_cov_vs=inv_cov_vs, 
             opacity=opacity, rgb=rgb, 
             output_img=output_img,
+            output_depth=output_depth,
             n_contributors=n_contributors,
             grid_height=render_grid.grid_height,
             grid_width=render_grid.grid_width,
@@ -112,17 +116,17 @@ class AlphaBlendTiledRender(torch.autograd.Function):
 
         ctx.save_for_backward(sorted_gauss_idx, tile_ranges,
                               xyz_vs, inv_cov_vs, opacity, rgb, 
-                              output_img, n_contributors)
+                              output_img, n_contributors, output_depth)
         ctx.render_grid = render_grid
 
-        return output_img
+        return output_img, output_depth
 
     ## TODO: This backward code is useless, remove it
     @staticmethod
     def backward(ctx, grad_output_img):
         (sorted_gauss_idx, tile_ranges, 
          xyz_vs, inv_cov_vs, opacity, rgb, 
-         output_img, n_contributors) = ctx.saved_tensors
+         output_img, n_contributors, output_depth) = ctx.saved_tensors
         render_grid = ctx.render_grid
 
         xyz_vs_grad = torch.zeros_like(xyz_vs)
@@ -147,6 +151,7 @@ class AlphaBlendTiledRender(torch.autograd.Function):
             opacity=(opacity, opacity_grad),
             rgb=(rgb, rgb_grad),
             output_img=(output_img, grad_output_img),
+            output_depth=output_depth,
             n_contributors=n_contributors,
             grid_height=render_grid.grid_height,
             grid_width=render_grid.grid_width,

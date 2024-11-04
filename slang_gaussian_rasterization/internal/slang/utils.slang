@@ -16,6 +16,19 @@ import spherical_harmonics;
 
 static const float eps = 1e-7;
 
+struct float5 : IDifferentiable
+{
+    float r;
+    float g;
+    float b;
+    float a;
+    float d;
+
+    // RGB swizzle accessor
+    [Differentiable]
+    float3 rgb(){ return float3(r, g, b); }
+};
+
 [Differentiable]
 float read_t1_float(uint32_t idx, DiffTensorView t1)
 {
@@ -408,7 +421,7 @@ Splat_2D_AlphaBlend load_splat_alphablend(int32_t g_idx,
 
 
 [Differentiable]
-float4 evaluate_splat(Splat_2D_AlphaBlend g, 
+float5 evaluate_splat(Splat_2D_AlphaBlend g, 
                       float2 pix_coord,
                       uint32_t H,
                       uint32_t W)
@@ -426,7 +439,7 @@ float4 evaluate_splat(Splat_2D_AlphaBlend g,
     float alpha = min(0.99f, g_opacity * exp(power));
     float3 premult_rgb = g_rgb * alpha;
     
-    return float4(premult_rgb, alpha);
+    return float5(premult_rgb.x, premult_rgb.y, premult_rgb.z, alpha, g_xyz.z);
 }
 
 struct Splat_3D_AlphaBlend : IDifferentiable
@@ -484,7 +497,7 @@ float compute_maxpdf_ray(float3 mu,
 
 
 [Differentiable]
-float4 evaluate_splat_volr(Splat_3D_AlphaBlend g, 
+float5 evaluate_splat_volr(Splat_3D_AlphaBlend g, 
                       float3 d,
                       uint32_t H,
                       uint32_t W, 
@@ -519,7 +532,7 @@ float4 evaluate_splat_volr(Splat_3D_AlphaBlend g,
     alpha = min(0.99f, alpha);
     float3 premult_rgb = g_rgb * alpha;
     
-    return float4(premult_rgb, alpha);
+    return float5(premult_rgb.x, premult_rgb.y, premult_rgb.z, alpha, tmax);
 }
 
 [Differentiable]

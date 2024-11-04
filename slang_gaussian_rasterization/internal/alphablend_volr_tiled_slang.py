@@ -57,7 +57,7 @@ def render_alpha_blend_volr_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
     except:
         pass
     
-    image_rgb = AlphaBlendVolrTiledRender.apply(
+    image_rgb, depth = AlphaBlendVolrTiledRender.apply(
         sorted_gauss_idx,
         tile_ranges,
         xyz3d_cam,
@@ -78,6 +78,7 @@ def render_alpha_blend_volr_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
         'visibility_filter': radii > 0,
         'radii': radii,
         'abs_xyz_var': abs_xyz_var,
+        'depth': depth,
     }
 
     return render_pkg
@@ -90,6 +91,9 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
         output_img = torch.zeros((render_grid.image_height, 
                                   render_grid.image_width, 4), 
                                  device=device)
+        output_depth = torch.zeros((render_grid.image_height, 
+                                   render_grid.image_width, 1),
+                                  device=device)
         n_contributors = torch.zeros((render_grid.image_height, 
                                       render_grid.image_width, 1),
                                      dtype=torch.int32, device=device)
@@ -112,6 +116,7 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
             opacity_volr=opacity_volr, 
             rgb=rgb, 
             output_img=output_img,
+            output_depth=output_depth,
             n_contributors=n_contributors,
             grad_abs=abs_xyz_var, ## NOTE: remove this line if it doesn't work
             fx=fx,
@@ -130,17 +135,17 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
 
         ctx.save_for_backward(sorted_gauss_idx, tile_ranges,
                               xyz3d_vs, inv_cov3d_vs, opacity, opacity_volr, rgb, 
-                              output_img, n_contributors, abs_xyz_var)
+                              output_img, n_contributors, abs_xyz_var, output_depth)
         ctx.render_grid = render_grid
         ctx.fx = fx
         ctx.fy = fy
-        return output_img
+        return output_img, output_depth
 
     @staticmethod
-    def backward(ctx, grad_output_img):
+    def backward(ctx, grad_output_img, grad_output_depth):
         (sorted_gauss_idx, tile_ranges, 
          xyz3d_vs, inv_cov3d_vs, opacity, opacity_volr, rgb, 
-         output_img, n_contributors, abs_xyz_var) = ctx.saved_tensors
+         output_img, n_contributors, abs_xyz_var, output_depth) = ctx.saved_tensors
         render_grid = ctx.render_grid
         fx, fy = ctx.fx, ctx.fy
         xyz3d_vs_grad = torch.zeros_like(xyz3d_vs)
@@ -168,6 +173,7 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
             opacity_volr=(opacity_volr, opacity_volr_grad),
             rgb=(rgb, rgb_grad),
             output_img=(output_img, grad_output_img),
+            output_depth=output_depth,
             n_contributors=n_contributors,
             grad_abs=abs_xyz_grad, ## NOTE: remove this line if it doesn't work
             fx=fx,
