@@ -184,5 +184,12 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
             gridSize=(render_grid.grid_width, 
                       render_grid.grid_height, 1)
         )
+        ## ADDED NAN TO NUM LATER REMOVE
+        # xyz3d_vs_grad = torch.nan_to_num(xyz3d_vs_grad, nan=0.0)
+        # inv_cov3d_vs_grad = torch.nan_to_num(inv_cov3d_vs_grad, nan=0.0)
+        # abs_xyz_grad = torch.nan_to_num(abs_xyz_grad, nan=0.0)
+        # opacity_grad = torch.nan_to_num(opacity_grad, nan=0.0)
+        # opacity_volr_grad = torch.nan_to_num(opacity_volr_grad, nan=0.0)
+        # rgb_grad = torch.nan_to_num(rgb_grad, nan=0.0)
 
         return None, None, xyz3d_vs_grad, inv_cov3d_vs_grad, opacity_grad, opacity_volr_grad, rgb_grad, None, None, None, abs_xyz_grad
