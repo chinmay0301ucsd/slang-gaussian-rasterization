@@ -35,7 +35,7 @@ def render_alpha_blend_volr_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
     
     # scale3d_factor = torch.sqrt(torch.max(2 * torch.log(opacity_volr / 0.01) / 9.0, torch.ones_like(opacity_volr)))
     scale3d_factor = torch.ones_like(opacity_volr)
-    sorted_gauss_idx, tile_ranges, radii, xyz_vs, xyz3d_cam, inv_cov3d_vs, inv_cov3d_vs, rgb  = vertex_and_tile_shader(xyz_ws,
+    sorted_gauss_idx, tile_ranges, radii, xyz_vs, xyz3d_cam, inv_cov_vs, inv_cov3d_vs, rgb  = vertex_and_tile_shader(xyz_ws,
                                                                                            rotations,
                                                                                            scales,
                                                                                            scale3d_factor,
@@ -87,6 +87,13 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
     @staticmethod
     def forward(ctx, sorted_gauss_idx, tile_ranges, xyz3d_vs, inv_cov3d_vs,
                  opacity, opacity_volr, rgb, render_grid, fovx, fovy, abs_xyz_var, device="cuda"):
+        # Add shape validation
+        n_gaussians = xyz3d_vs.shape[0]
+        xyz3d_vs = xyz3d_vs.contiguous()
+        inv_cov3d_vs = inv_cov3d_vs.contiguous()
+        opacity = opacity.contiguous()
+        opacity_volr = opacity_volr.contiguous()
+        rgb = rgb.contiguous()
         output_img = torch.zeros((render_grid.image_height, 
                                   render_grid.image_width, 4), 
                                  device=device)
@@ -102,6 +109,25 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
         tan_half_fovy = math.tan(fovy / 2.0)
         fx = render_grid.image_width / (2.0 * tan_half_fovx)
         fy = render_grid.image_height / (2.0 * tan_half_fovy)
+
+        # # Check for NaN values in key tensors
+        # if torch.isnan(xyz3d_vs).any():
+        #     raise ValueError("NaN values detected in xyz3d_vs")
+        # if torch.isnan(inv_cov3d_vs).any():
+        #     raise ValueError("NaN values detected in inv_cov3d_vs") 
+        # if torch.isnan(opacity_volr).any():
+        #     raise ValueError("NaN values detected in opacity_volr")
+        # if torch.isnan(xyz3d_vs).any():
+        #     raise ValueError("NaN values detected in xyz3d_vs")
+        # if torch.isnan(sorted_gauss_idx).any():
+        #     raise ValueError("NaN values in sorted_gauss_idx")
+        # if torch.isnan(opacity).any():
+        #     raise ValueError("NaN values in opacity")
+        # print(f"rgb min : {rgb.min()} | rgb max : {rgb.max()}")
+        # if torch.isnan(rgb).any():
+        #     raise ValueError("NaN values in rgb")
+        
+        # print(f"Max Density {torch.max(opacity_volr)} | Min Density {torch.min(opacity_volr)} | Max cov3dvs {torch.max(inv_cov3d_vs)} | Min cov3dvs {torch.min(inv_cov3d_vs)}")
         alpha_blend_tile_shader = slang_modules.alpha_blend_volr_shaders[(render_grid.tile_height, render_grid.tile_width)]
         splat_kernel_with_args = alpha_blend_tile_shader.splat_volr_tiled(
             sorted_gauss_idx=sorted_gauss_idx,
@@ -127,7 +153,6 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
             gridSize=(render_grid.grid_width, 
                       render_grid.grid_height, 1)
         )
-
         ctx.save_for_backward(sorted_gauss_idx, tile_ranges,
                               xyz3d_vs, inv_cov3d_vs, opacity, opacity_volr, rgb, 
                               output_img, n_contributors, abs_xyz_var)
@@ -184,12 +209,5 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
             gridSize=(render_grid.grid_width, 
                       render_grid.grid_height, 1)
         )
-        ## ADDED NAN TO NUM LATER REMOVE
-        # xyz3d_vs_grad = torch.nan_to_num(xyz3d_vs_grad, nan=0.0)
-        # inv_cov3d_vs_grad = torch.nan_to_num(inv_cov3d_vs_grad, nan=0.0)
-        # abs_xyz_grad = torch.nan_to_num(abs_xyz_grad, nan=0.0)
-        # opacity_grad = torch.nan_to_num(opacity_grad, nan=0.0)
-        # opacity_volr_grad = torch.nan_to_num(opacity_volr_grad, nan=0.0)
-        # rgb_grad = torch.nan_to_num(rgb_grad, nan=0.0)
 
         return None, None, xyz3d_vs_grad, inv_cov3d_vs_grad, opacity_grad, opacity_volr_grad, rgb_grad, None, None, None, abs_xyz_grad

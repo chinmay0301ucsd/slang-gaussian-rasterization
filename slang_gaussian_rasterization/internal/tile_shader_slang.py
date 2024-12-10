@@ -73,6 +73,17 @@ def vertex_and_tile_shader(xyz_ws,
                                                                                         fovx,
                                                                                         render_grid,
                                                                                         softplus_rgb)
+    # Check for NaNs in key tensors
+    with torch.no_grad():
+        has_nans = (torch.isnan(xyz3d_cam).any() or 
+                   torch.isnan(inv_cov3d_vs).any() or
+                   torch.isnan(scales).any())
+        if has_nans:
+            raise ValueError("NaN values detected in vertex shader outputs: " +
+                           f"xyz3d_cam: {torch.isnan(xyz3d_cam).any()}, " +
+                           f"inv_cov3d_vs: {torch.isnan(inv_cov3d_vs).any()}, " + 
+                           f"scales: {torch.isnan(scales).any()}")
+    
     with torch.no_grad():
       index_buffer_offset = torch.cumsum(tiles_touched, dim=0, dtype=tiles_touched.dtype)
       total_size_index_buffer = index_buffer_offset[-1]

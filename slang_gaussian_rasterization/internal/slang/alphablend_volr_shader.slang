@@ -90,7 +90,6 @@ float4 alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
                 Splat_3D_AlphaBlend g = collected_splats[j];
                 float4 gauss_rgba = evaluate_splat_volr(g, dir, H, W, fx, fy);
                 
-                // TODO: Uncomment this!!
                 //Skip Splats that have a tiny contribution.
                 if (gauss_rgba.a < 1.0f / 255.0f)
                     continue;
@@ -330,7 +329,6 @@ float4 vis_volr(TensorView<int32_t> sorted_gauss_idx,
                 float4 gauss_rgba = evaluate_splat_volr(g, dir, H, W, fx, fy);
                 float denominator = max(eps, dot(dir, mul(g.inv_cov3d_vs, dir)));
                 float sigma_d = sqrt(1.0f / (denominator + eps));
-                // TODO: Uncomment this!!
                 //Skip Splats that have a tiny contribution.
                 if (gauss_rgba.a > 0.5f) {
                     curr_pixel_state = float4(g_idx, gauss_rgba.a, sigma_d, 0.f);
