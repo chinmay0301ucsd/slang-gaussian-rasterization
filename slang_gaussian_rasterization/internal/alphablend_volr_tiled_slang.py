@@ -110,24 +110,6 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
         fx = render_grid.image_width / (2.0 * tan_half_fovx)
         fy = render_grid.image_height / (2.0 * tan_half_fovy)
 
-        # # Check for NaN values in key tensors
-        # if torch.isnan(xyz3d_vs).any():
-        #     raise ValueError("NaN values detected in xyz3d_vs")
-        # if torch.isnan(inv_cov3d_vs).any():
-        #     raise ValueError("NaN values detected in inv_cov3d_vs") 
-        # if torch.isnan(opacity_volr).any():
-        #     raise ValueError("NaN values detected in opacity_volr")
-        # if torch.isnan(xyz3d_vs).any():
-        #     raise ValueError("NaN values detected in xyz3d_vs")
-        # if torch.isnan(sorted_gauss_idx).any():
-        #     raise ValueError("NaN values in sorted_gauss_idx")
-        # if torch.isnan(opacity).any():
-        #     raise ValueError("NaN values in opacity")
-        # print(f"rgb min : {rgb.min()} | rgb max : {rgb.max()}")
-        # if torch.isnan(rgb).any():
-        #     raise ValueError("NaN values in rgb")
-        
-        # print(f"Max Density {torch.max(opacity_volr)} | Min Density {torch.min(opacity_volr)} | Max cov3dvs {torch.max(inv_cov3d_vs)} | Min cov3dvs {torch.min(inv_cov3d_vs)}")
         alpha_blend_tile_shader = slang_modules.alpha_blend_volr_shaders[(render_grid.tile_height, render_grid.tile_width)]
         splat_kernel_with_args = alpha_blend_tile_shader.splat_volr_tiled(
             sorted_gauss_idx=sorted_gauss_idx,
@@ -147,12 +129,24 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
             tile_height=render_grid.tile_height,
             tile_width=render_grid.tile_width
         )
+
         splat_kernel_with_args.launchRaw(
             blockSize=(render_grid.tile_width, 
                        render_grid.tile_height, 1),
             gridSize=(render_grid.grid_width, 
                       render_grid.grid_height, 1)
         )
+        # Check for NaN/Inf in output_img
+        if torch.isnan(output_img).any() or torch.isinf(output_img).any():
+            print("Warning: NaN or Inf detected in output_img")
+            
+        # Check for NaN/Inf in abs_xyz_var 
+        if torch.isnan(abs_xyz_var).any() or torch.isinf(abs_xyz_var).any():
+            print("Warning: NaN or Inf detected in abs_xyz_var")
+            
+        # Check for negative values in n_contributors
+        if (n_contributors < 0).any():
+            print("Warning: Negative values detected in n_contributors")
         ctx.save_for_backward(sorted_gauss_idx, tile_ranges,
                               xyz3d_vs, inv_cov3d_vs, opacity, opacity_volr, rgb, 
                               output_img, n_contributors, abs_xyz_var)

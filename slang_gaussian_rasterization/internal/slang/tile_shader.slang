@@ -74,11 +74,22 @@ void compute_tile_ranges(TensorView<int64_t> sorted_keys,
 
     // Read tile ID from key. Update start/end of tile range if at limit.
     uint32_t currtile = uint32_t(uint64_t(sorted_keys[globalIdx]) >> 32);
+    // TODO remove if statement later
+    // if (currtile >= sorted_keys.size(0)) {
+    //     printf("currtile exceeds sorted_keys.size(0): %d\n");
+    //     return;
+    // }
+    
     if (globalIdx == 0)
         out_tile_ranges[uint2(currtile, 0)] = 0;
     else
     {
         uint32_t prevtile = uint32_t(uint64_t(sorted_keys[globalIdx - 1]) >> 32);
+        // TODO remove if statement later
+        // if (prevtile >= sorted_keys.size(0)) {
+        //     printf("prevtile exceeds sorted_keys.size(0): %d\n", prevtile);
+        //     return;
+        // }
         if (currtile != prevtile)
         {
             out_tile_ranges[uint2(prevtile, 1)] = globalIdx;

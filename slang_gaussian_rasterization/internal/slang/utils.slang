@@ -500,7 +500,14 @@ float4 evaluate_splat_volr(Splat_3D_AlphaBlend g,
 
     float denominator = max(eps, dot(d, mul(g_inv_cov3d, d)));
     float numerator = dot(g_xyz, mul(g_inv_cov3d, d));
-    float tmax = max(numerator / denominator, 0.0f);
+    float tmax = numerator / denominator;
+    if (numerator <= 0.0f){
+       return float4(0.0f, 0.0f, 0.0f, 0.0f);
+    }
+    // Added this condition later, added to avoid NaN due to very large / very small values in pdfmax power
+    // if (tmax == 0.0f) {
+    //     return float4(0.0f, 0.0f, 0.0f, 0.0f);
+    // }
 
     float3 diff = tmax * d - g_xyz;
     float power = -0.5 * dot(diff, mul(g_inv_cov3d, diff));

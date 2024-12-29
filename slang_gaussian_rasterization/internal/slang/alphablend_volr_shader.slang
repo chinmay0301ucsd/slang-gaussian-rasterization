@@ -71,6 +71,7 @@ float4 alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
     uint32_t thread_rank = cudaThreadIdx().y * cudaBlockDim().x + cudaThreadIdx().x;
 
     int32_t local_n_contrib = 0;
+    int32_t last_n_contrib = 0;
     int splats_left_to_process = tile_idx_end - tile_idx_start;
     for (int i = 0; i < shared_memory_rounds; i++)
     {
@@ -102,6 +103,7 @@ float4 alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
                     break;
                 }
                 curr_pixel_state = new_pixel_state;
+                // last_n_contrib = local_n_contrib;
             }
         }
         splats_left_to_process -= block_size;
@@ -109,7 +111,9 @@ float4 alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
 
     if (is_inside)
         n_contributors[uint3(uint32_t(pix_coord.y), uint32_t(pix_coord.x), 0)] = local_n_contrib;
-
+        if (local_n_contrib < 0) {
+            printf("local_n_contrib: %d\n", local_n_contrib);
+        }
     return curr_pixel_state;
 }
 
@@ -244,7 +248,6 @@ void splat_volr_tiled(TensorView<int32_t> sorted_gauss_idx,
     uint32_t tile_idx_end = uint32_t(tile_ranges[uint2(tile_idx, 1)]);
 
     bool is_inside = (pix_coord.x < output_img.size(1) && pix_coord.y < output_img.size(0));
-
     float4 pixel_state = alpha_blend_volr(sorted_gauss_idx,
                                      xyz3d_vs,
                                      inv_cov3d_vs,
@@ -263,7 +266,6 @@ void splat_volr_tiled(TensorView<int32_t> sorted_gauss_idx,
                                      fy,
                                      output_img.size(0),
                                      output_img.size(1));
-
     if (is_inside) {
       output_img.storeOnce(uint3(uint32_t(pix_coord.y), uint32_t(pix_coord.x), 0), pixel_state.r);
       output_img.storeOnce(uint3(uint32_t(pix_coord.y), uint32_t(pix_coord.x), 1), pixel_state.g);
