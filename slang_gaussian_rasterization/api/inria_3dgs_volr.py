@@ -43,7 +43,7 @@ def common_properties_from_inria_Camera(camera):
   return world_view_transform, projection_matrix, cam_pos, fovy, fovx, height, width 
 
 
-def render(viewpoint_camera, pc, pipe, bg_color, scaling_modifier = 1.0, override_color = None):
+def render(viewpoint_camera, pc, pipe, bg_color, scaling_modifier = 1.0, override_color = None, use_new_tile_size=False, tilethresh=0.005):
   """ Implements the volumetric rasterization Interface defined in the inria code-base."""
   assert scaling_modifier == 1.0, "scaling_modifier is not supported in the slang-gaussian-rasterization."
   assert override_color is None, "override_color is not support in the slang-gaussian-rasterization."
@@ -61,7 +61,7 @@ def render(viewpoint_camera, pc, pipe, bg_color, scaling_modifier = 1.0, overrid
   render_pkg = render_alpha_blend_volr_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
                                                   opacity_volr, sh_coeffs, active_sh,
                                                   world_view_transform, proj_mat, cam_pos,
-                                                  fovy, fovx, height, width, softplus_rgb)
+                                                  fovy, fovx, height, width, softplus_rgb, tile_size=16, use_new_tile_size=use_new_tile_size, tilethresh=tilethresh)
   
   return render_pkg
 

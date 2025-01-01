@@ -8,7 +8,6 @@ struct rectangle {
     int32_t max_y;
 };
 
-
 rectangle get_rectangle_tile_space(
     float2 ndc_xy,
     float radius,
@@ -39,7 +38,9 @@ void vertex_shader(DiffTensorView xyz_ws,
                    DiffTensorView rotations,
                    DiffTensorView scales,
                    DiffTensorView scale3d_factor,
+                   DiffTensorView density,
                    uint active_sh,
+                   no_diff float tilethresh, // used only in new shader
                    TensorView<float> world_view_transform,
                    TensorView<float> proj_mat,
                    TensorView<float> cam_pos,
@@ -53,6 +54,8 @@ void vertex_shader(DiffTensorView xyz_ws,
                    DiffTensorView out_rgb,
                    no_diff float fovy,
                    no_diff float fovx,
+                   no_diff float fx,
+                   no_diff float fy,
                    uint image_height,
                    uint image_width,
                    uint grid_height,
@@ -66,7 +69,7 @@ void vertex_shader(DiffTensorView xyz_ws,
     if (g_idx >= xyz_ws.size(0))
         return;
 
-    Camera cam = no_diff load_camera(world_view_transform, proj_mat, cam_pos, fovy, fovx, image_height, image_width);
+    Camera cam = no_diff load_camera(world_view_transform, proj_mat, cam_pos, fovy, fovx, fx, fy, image_height, image_width);
     // TODO: Add the opacity based scaling factor here to gauss, for calculating correct tile sizes
     Gaussian_3D gauss = load_gaussian(g_idx, xyz_ws, sh_coeffs, rotations, scales, active_sh);
     // Apply scale3d_factor to the Gaussian scales, to incorporate effect of opacity in computing tile size
@@ -87,7 +90,9 @@ void vertex_shader(DiffTensorView xyz_ws,
     // Computing 3D covariance as part of the vertex shader and exporting it for future use. 
     // Removing the opacity based scaling factor before these steps, so that actual covariance isn't affected. 
     gauss.scales = gauss.scales / scalef;
-    float3x3 cov3d_ws = get_covariance_from_quat_scales(gauss.rotations, gauss.scales);
+    // float3x3 cov3d_ws = get_covariance_from_quat_scales(gauss.rotations, gauss.scales);
+    SigmaRS sigma_rs = get_covariance_from_quat_scales(gauss.rotations, gauss.scales);
+    float3x3 cov3d_ws = sigma_rs.Sigma;
     float3x3 inv_cov3d_ws = get_inverse_covariance_from_quat_scales(gauss.rotations, gauss.scales);
     float3x3 cov3d_vs = covariance_3dw_to_3dv(cam, cov3d_ws);
 
@@ -102,7 +107,6 @@ void vertex_shader(DiffTensorView xyz_ws,
     
     float3 xyz3d_cam = geom_transform_points2(gauss.xyz_ws, cam.world_view_transform);
     float radius = splat_radius(splat.cov_vs, det);
-
 
     float2 pixelspace_xy = { ndc2pix(splat.xyz_vs.x, image_width), ndc2pix(splat.xyz_vs.y, image_height) };
     rectangle rect_tile_space = get_rectangle_tile_space(pixelspace_xy,
@@ -132,6 +136,118 @@ void vertex_shader(DiffTensorView xyz_ws,
     out_inv_cov_vs.storeOnce(uint3(g_idx, 0, 1), g_inv_cov_vs[0][1]);
     out_inv_cov_vs.storeOnce(uint3(g_idx, 1, 0), g_inv_cov_vs[1][0]);
     out_inv_cov_vs.storeOnce(uint3(g_idx, 1, 1), g_inv_cov_vs[1][1]);
+    out_inv_cov3d_vs.storeOnce(uint3(g_idx, 0, 0), inv_cov3d_vs[0][0]);
+    out_inv_cov3d_vs.storeOnce(uint3(g_idx, 0, 1), inv_cov3d_vs[0][1]);
+    out_inv_cov3d_vs.storeOnce(uint3(g_idx, 0, 2), inv_cov3d_vs[0][2]);
+    out_inv_cov3d_vs.storeOnce(uint3(g_idx, 1, 0), inv_cov3d_vs[1][0]);
+    out_inv_cov3d_vs.storeOnce(uint3(g_idx, 1, 1), inv_cov3d_vs[1][1]);
+    out_inv_cov3d_vs.storeOnce(uint3(g_idx, 1, 2), inv_cov3d_vs[1][2]);
+    out_inv_cov3d_vs.storeOnce(uint3(g_idx, 2, 0), inv_cov3d_vs[2][0]);
+    out_inv_cov3d_vs.storeOnce(uint3(g_idx, 2, 1), inv_cov3d_vs[2][1]);
+    out_inv_cov3d_vs.storeOnce(uint3(g_idx, 2, 2), inv_cov3d_vs[2][2]);
+    out_rgb.storeOnce(uint2(g_idx, 0), splat.rgb.r);
+    out_rgb.storeOnce(uint2(g_idx, 1), splat.rgb.g);
+    out_rgb.storeOnce(uint2(g_idx, 2), splat.rgb.b);
+}
+
+[AutoPyBindCUDA]
+[CUDAKernel]
+[Differentiable]
+void vertex_shader_new(DiffTensorView xyz_ws,
+                   DiffTensorView sh_coeffs,
+                   DiffTensorView rotations,
+                   DiffTensorView scales,
+                   DiffTensorView scale3d_factor,
+                   DiffTensorView density,
+                   no_diff float tilethresh,
+                   uint active_sh,
+                   TensorView<float> world_view_transform,
+                   TensorView<float> proj_mat,
+                   TensorView<float> cam_pos,
+                   TensorView<int32_t> out_tiles_touched,
+                   TensorView<int32_t> out_rect_tile_space,
+                   TensorView<int32_t> out_radii,
+                   DiffTensorView out_xyz_vs,
+                   DiffTensorView out_xyz3d_cam,
+                   DiffTensorView out_inv_cov_vs,
+                   DiffTensorView out_inv_cov3d_vs,
+                   DiffTensorView out_rgb,
+                   no_diff float fovy,
+                   no_diff float fovx,
+                   no_diff float fx,
+                   no_diff float fy,
+                   uint image_height,
+                   uint image_width,
+                   uint grid_height,
+                   uint grid_width,
+                   uint tile_height,
+                   uint tile_width,
+                   bool softplus_rgb)
+{
+    uint32_t g_idx = cudaBlockIdx().x * cudaBlockDim().x + cudaThreadIdx().x;
+
+    if (g_idx >= xyz_ws.size(0))
+        return;
+
+    Camera cam = no_diff load_camera(world_view_transform, proj_mat, cam_pos, fovy, fovx, fx, fy, image_height, image_width);
+    // TODO: Add the opacity based scaling factor here to gauss, for calculating correct tile sizes
+    Gaussian_3D gauss = load_gaussian(g_idx, xyz_ws, sh_coeffs, rotations, scales, active_sh);
+    // Apply scale3d_factor to the Gaussian scales, to incorporate effect of opacity in computing tile size
+    float density = read_t1_float(g_idx, density);
+    // TODO: Add code here to compute scaling factor in alpha volr for each vertex.
+    Splat_2D_Vertex splat = project_gaussian_to_camera_newshader(gauss, cam, active_sh, softplus_rgb);
+    if (splat.xyz_vs.z <= 0.2) {
+        return;
+    }
+    // float det = compute_det(splat.cov_vs);
+
+    // if (det == 0.0f)
+    //     return;
+    // Computing 3D covariance as part of the vertex shader and exporting it for future use.
+    // Removing the opacity based scaling factor before these steps, so that actual covariance isn't affected.
+    // gauss.scales = gauss.scales / scalef;
+    // float3x3 cov3d_ws = get_covariance_from_quat_scales(gauss.rotations, gauss.scales);
+    SigmaRS sigma_rs = get_covariance_from_quat_scales(gauss.rotations, gauss.scales);
+    float3x3 cov3d_ws = sigma_rs.Sigma;
+    float3x3 R = sigma_rs.R;
+    float3x3 S = sigma_rs.S;
+    float3x3 inv_cov3d_ws = get_inverse_covariance_from_quat_scales(gauss.rotations, gauss.scales);
+    float3x3 cov3d_vs = covariance_3dw_to_3dv(cam, cov3d_ws);
+
+    float3x3 inv_cov3d_vs = covariance_3dw_to_3dv(cam, inv_cov3d_ws);
+    // float3x3 inv_cov3d_vs = inverse3x3(cov3d_vs);
+
+    float3 xyz3d_cam = geom_transform_points2(gauss.xyz_ws, cam.world_view_transform);
+    // float radius = splat_radius(splat.cov_vs, det);
+    float radius = splat_radius2(xyz3d_cam, density, tilethresh, R, S, inv_cov3d_vs, cam);
+
+    float2 pixelspace_xy = { ndc2pix(splat.xyz_vs.x, image_width), ndc2pix(splat.xyz_vs.y, image_height) };
+    rectangle rect_tile_space = get_rectangle_tile_space(pixelspace_xy,
+                                                         radius, grid_height, grid_width, tile_height, tile_width);
+    int32_t n_tiles = (rect_tile_space.max_x - rect_tile_space.min_x) * (rect_tile_space.max_y - rect_tile_space.min_y);
+
+    if (n_tiles == 0) {
+        return;
+    }
+
+    // printf("radius: %f\n", radius);
+    out_radii[g_idx] = (uint32_t)radius;
+    out_tiles_touched[g_idx] = n_tiles;
+    out_rect_tile_space[uint2(g_idx, 0)] = rect_tile_space.min_x;
+    out_rect_tile_space[uint2(g_idx, 1)] = rect_tile_space.min_y;
+    out_rect_tile_space[uint2(g_idx, 2)] = rect_tile_space.max_x;
+    out_rect_tile_space[uint2(g_idx, 3)] = rect_tile_space.max_y;
+    // splat.xyz_vs doesn't need to be stored, remove it (uses unnecessary atomic add)
+    // out_xyz_vs.storeOnce(uint2(g_idx, 0), splat.xyz_vs.x);
+    // out_xyz_vs.storeOnce(uint2(g_idx, 1), splat.xyz_vs.y);
+    // out_xyz_vs.storeOnce(uint2(g_idx, 2), splat.xyz_vs.z);
+    out_xyz3d_cam.storeOnce(uint2(g_idx, 0), xyz3d_cam.x);
+    out_xyz3d_cam.storeOnce(uint2(g_idx, 1), xyz3d_cam.y);
+    out_xyz3d_cam.storeOnce(uint2(g_idx, 2), xyz3d_cam.z);
+    // out_inv_cov_vs.storeOnce(uint3(g_idx, 0, 0), g_inv_cov_vs[0][0]);
+    // out_inv_cov_vs.storeOnce(uint3(g_idx, 0, 1), g_inv_cov_vs[0][1]);
+    // out_inv_cov_vs.storeOnce(uint3(g_idx, 1, 0), g_inv_cov_vs[1][0]);
+    // out_inv_cov_vs.storeOnce(uint3(g_idx, 1, 1), g_inv_cov_vs[1][1]);
     out_inv_cov3d_vs.storeOnce(uint3(g_idx, 0, 0), inv_cov3d_vs[0][0]);
     out_inv_cov3d_vs.storeOnce(uint3(g_idx, 0, 1), inv_cov3d_vs[0][1]);
     out_inv_cov3d_vs.storeOnce(uint3(g_idx, 0, 2), inv_cov3d_vs[0][2]);

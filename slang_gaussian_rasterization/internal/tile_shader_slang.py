@@ -21,6 +21,8 @@ def vertex_and_tile_shader(xyz_ws,
                            rotations,
                            scales,
                            scale3d_factor,
+                           density,
+                           tilethresh,
                            sh_coeffs,
                            active_sh,
                            world_view_transform,
@@ -29,7 +31,8 @@ def vertex_and_tile_shader(xyz_ws,
                            fovy,
                            fovx,
                            render_grid, 
-                           softplus_rgb):
+                           softplus_rgb,
+                           use_new_tile_size=False):
     """
     Vertex and Tile Shader for 3D Gaussian Splatting.
 
@@ -39,6 +42,7 @@ def vertex_and_tile_shader(xyz_ws,
       scales: Tensor with the scales describing the extent of the Gaussians along the major axes [N, 3].
       scale3d_factor: Tensor with the scaling factor to modify 3D scales of the Gaussians.
                       Used only for volr splatting, else ones. [N, 1]. 
+      density: Tensor with the density of the Gaussians [N, 1].
       sh_coeffs: Tensor with the spherical harmonic coefficient which describe with 16 values for each color 
                  the view-dependent emission of each Gaussian [N, 16, 3].
       active_sh: The number of the first active spherical harmonic coefficients, rendering ignores the rest.
@@ -49,7 +53,8 @@ def vertex_and_tile_shader(xyz_ws,
       fovx: The horizontal Field of View in radians.
       render_grid: Describes the resolution of the image and the tiling resoluting.
       softplus_rgb: bool to decide if spherical harmonic evals should be passed through a softplus function
-   
+      use_new_tile_size: bool to decide if the new density based tile size should be used.
+
     Returns:
       sorted_gauss_idx: A list of indices that describe the sorted order with which all tiles should rendered the Gaussians. [M, 1]
       tile_ranges: Describes the range of Gaussians in the sorted_gauss_idx that are relevant for each tile. [T, 2]
@@ -64,6 +69,8 @@ def vertex_and_tile_shader(xyz_ws,
                                                                                         rotations,
                                                                                         scales,
                                                                                         scale3d_factor,
+                                                                                        density,
+                                                                                        tilethresh,
                                                                                         sh_coeffs,
                                                                                         active_sh,
                                                                                         world_view_transform,
@@ -72,7 +79,8 @@ def vertex_and_tile_shader(xyz_ws,
                                                                                         fovy,
                                                                                         fovx,
                                                                                         render_grid,
-                                                                                        softplus_rgb)
+                                                                                        softplus_rgb,
+                                                                                        use_new_tile_size)
     # Check for NaNs in key tensors
     with torch.no_grad():
         has_nans = (torch.isnan(xyz3d_cam).any() or 
@@ -120,10 +128,10 @@ def vertex_and_tile_shader(xyz_ws,
 
 class VertexShader(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, xyz_ws, rotations, scales, scale3d_factor,
+    def forward(ctx, xyz_ws, rotations, scales, scale3d_factor, density, tilethresh,
                 sh_coeffs, active_sh, world_view_transform,
                 proj_mat, cam_pos, fovy, fovx,
-                render_grid, softplus_rgb):
+                render_grid, softplus_rgb, use_new_tile_size):
       n_points = xyz_ws.shape[0]
       tiles_touched = torch.zeros((n_points), 
                                   device="cuda", 
@@ -150,54 +158,71 @@ class VertexShader(torch.autograd.Function):
                         device="cuda",
                         dtype=torch.float)
       
-      slang_modules.vertex_shader.vertex_shader(xyz_ws=xyz_ws,
-                                                rotations=rotations,
-                                                scales=scales,
-                                                scale3d_factor=scale3d_factor,
-                                                sh_coeffs=sh_coeffs,
-                                                active_sh=active_sh,
-                                                world_view_transform=world_view_transform,
-                                                proj_mat=proj_mat,
-                                                cam_pos=cam_pos,
-                                                out_tiles_touched=tiles_touched,
-                                                out_rect_tile_space=rect_tile_space,
-                                                out_radii=radii,
-                                                out_xyz_vs=xyz_vs,
-                                                out_xyz3d_cam=xyz3d_cam,
-                                                out_inv_cov_vs=inv_cov_vs,
-                                                out_inv_cov3d_vs=inv_cov3d_vs,
-                                                out_rgb=rgb,
-                                                fovy=fovy,
-                                                fovx=fovx,
-                                                image_height=render_grid.image_height,
-                                                image_width=render_grid.image_width,
-                                                grid_height=render_grid.grid_height,
-                                                grid_width=render_grid.grid_width,
-                                                tile_height=render_grid.tile_height,
-                                                tile_width=render_grid.tile_width,
-                                                softplus_rgb=softplus_rgb).launchRaw(
+      tan_half_fovx = math.tan(fovx / 2.0)
+      tan_half_fovy = math.tan(fovy / 2.0)
+      fx = render_grid.image_width / (2.0 * tan_half_fovx)
+      fy = render_grid.image_height / (2.0 * tan_half_fovy)
+      vshader = slang_modules.vertex_shader.vertex_shader_new if use_new_tile_size else slang_modules.vertex_shader.vertex_shader
+      vshader(xyz_ws=xyz_ws,
+              rotations=rotations,
+              scales=scales,
+              scale3d_factor=scale3d_factor,
+              density=density,
+              tilethresh=tilethresh,
+              sh_coeffs=sh_coeffs,
+              active_sh=active_sh,
+              world_view_transform=world_view_transform,
+              proj_mat=proj_mat,
+              cam_pos=cam_pos,
+              out_tiles_touched=tiles_touched,
+              out_rect_tile_space=rect_tile_space,
+              out_radii=radii,
+              out_xyz_vs=xyz_vs,
+              out_xyz3d_cam=xyz3d_cam,
+              out_inv_cov_vs=inv_cov_vs,
+              out_inv_cov3d_vs=inv_cov3d_vs,
+              out_rgb=rgb,
+              fovy=fovy,
+              fovx=fovx,
+              fx=fx,
+              fy=fy,
+              image_height=render_grid.image_height,
+              image_width=render_grid.image_width,
+              grid_height=render_grid.grid_height,
+              grid_width=render_grid.grid_width,
+              tile_height=render_grid.tile_height,
+              tile_width=render_grid.tile_width,
+              softplus_rgb=softplus_rgb).launchRaw(
               blockSize=(256, 1, 1),
               gridSize=(math.ceil(n_points/256), 1, 1)
       )
 
-      ctx.save_for_backward(xyz_ws, rotations, scales, scale3d_factor, sh_coeffs, world_view_transform, proj_mat, cam_pos,
+      ctx.save_for_backward(xyz_ws, rotations, scales, scale3d_factor, density, sh_coeffs, world_view_transform, proj_mat, cam_pos,
                             tiles_touched, rect_tile_space, radii, xyz_vs, xyz3d_cam, inv_cov_vs, inv_cov3d_vs, rgb)
       ctx.render_grid = render_grid
       ctx.fovy = fovy
       ctx.fovx = fovx
+      ctx.fx = fx
+      ctx.fy = fy
       ctx.active_sh = active_sh
       ctx.softplus_rgb = softplus_rgb
+      ctx.use_new_tile_size = use_new_tile_size
+      ctx.tilethresh = tilethresh
       return tiles_touched, rect_tile_space, radii, xyz_vs, xyz3d_cam, inv_cov_vs, inv_cov3d_vs, rgb
     
     @staticmethod
     def backward(ctx, grad_tiles_touched, grad_rect_tile_space, grad_radii, grad_xyz_vs, grad_xyz3d_cam, grad_inv_cov_vs, grad_inv_cov3d_vs, grad_rgb):
-        (xyz_ws, rotations, scales, scale3d_factor, sh_coeffs, world_view_transform, proj_mat, cam_pos,
+        (xyz_ws, rotations, scales, scale3d_factor, density, sh_coeffs, world_view_transform, proj_mat, cam_pos,
          tiles_touched, rect_tile_space, radii, xyz_vs, xyz3d_cam,inv_cov_vs, inv_cov3d_vs, rgb) = ctx.saved_tensors
         render_grid = ctx.render_grid
         fovy = ctx.fovy
         fovx = ctx.fovx
+        fx = ctx.fx
+        fy = ctx.fy
         active_sh = ctx.active_sh
         softplus_rgb = ctx.softplus_rgb
+        use_new_tile_size = ctx.use_new_tile_size
+        tilethresh = ctx.tilethresh
 
         n_points = xyz_ws.shape[0]
 
@@ -205,35 +230,40 @@ class VertexShader(torch.autograd.Function):
         grad_rotations = torch.zeros_like(rotations)
         grad_scales = torch.zeros_like(scales)
         grad_scale3d_factor = torch.zeros_like(scale3d_factor)
+        grad_density = torch.zeros_like(density)
         grad_sh_coeffs = torch.zeros_like(sh_coeffs)
-
-        slang_modules.vertex_shader.vertex_shader.bwd(xyz_ws=(xyz_ws, grad_xyz_ws),
-                                                      rotations=(rotations, grad_rotations),
-                                                      scales=(scales, grad_scales),
-                                                      scale3d_factor=(scale3d_factor, grad_scale3d_factor),
-                                                      sh_coeffs=(sh_coeffs, grad_sh_coeffs),
-                                                      active_sh=active_sh,
-                                                      world_view_transform=world_view_transform,
-                                                      proj_mat=proj_mat,
-                                                      cam_pos=cam_pos,
-                                                      out_tiles_touched=tiles_touched,
-                                                      out_rect_tile_space=rect_tile_space,
-                                                      out_radii=radii,
-                                                      out_xyz_vs=(xyz_vs, grad_xyz_vs),
-                                                      out_xyz3d_cam=(xyz3d_cam, grad_xyz3d_cam),
-                                                      out_inv_cov_vs=(inv_cov_vs, grad_inv_cov_vs),
-                                                      out_inv_cov3d_vs=(inv_cov3d_vs, grad_inv_cov3d_vs),
-                                                      out_rgb=(rgb, grad_rgb),
-                                                      fovy=fovy,
-                                                      fovx=fovx,
-                                                      image_height=render_grid.image_height,
-                                                      image_width=render_grid.image_width,
-                                                      grid_height=render_grid.grid_height,
-                                                      grid_width=render_grid.grid_width,
-                                                      tile_height=render_grid.tile_height,
-                                                      tile_width=render_grid.tile_width,
-                                                      softplus_rgb=softplus_rgb).launchRaw(
+        vshader = slang_modules.vertex_shader.vertex_shader_new if use_new_tile_size else slang_modules.vertex_shader.vertex_shader
+        vshader.bwd(xyz_ws=(xyz_ws, grad_xyz_ws),
+                    rotations=(rotations, grad_rotations),
+                    scales=(scales, grad_scales),
+                    scale3d_factor=(scale3d_factor, grad_scale3d_factor),
+                    density=(density, grad_density),
+                    tilethresh=tilethresh,
+                    sh_coeffs=(sh_coeffs, grad_sh_coeffs),
+                    active_sh=active_sh,
+                    world_view_transform=world_view_transform,
+                    proj_mat=proj_mat,
+                    cam_pos=cam_pos,
+                    out_tiles_touched=tiles_touched,
+                    out_rect_tile_space=rect_tile_space,
+                    out_radii=radii,
+                    out_xyz_vs=(xyz_vs, grad_xyz_vs),
+                    out_xyz3d_cam=(xyz3d_cam, grad_xyz3d_cam),
+                    out_inv_cov_vs=(inv_cov_vs, grad_inv_cov_vs),
+                    out_inv_cov3d_vs=(inv_cov3d_vs, grad_inv_cov3d_vs),
+                    out_rgb=(rgb, grad_rgb),
+                    fovy=fovy,
+                    fovx=fovx,
+                    fx=fx,
+                    fy=fy,
+                    image_height=render_grid.image_height,
+                    image_width=render_grid.image_width,
+                    grid_height=render_grid.grid_height,
+                    grid_width=render_grid.grid_width,
+                    tile_height=render_grid.tile_height,
+                    tile_width=render_grid.tile_width,
+                    softplus_rgb=softplus_rgb).launchRaw(
               blockSize=(256, 1, 1),
               gridSize=(math.ceil(n_points/256), 1, 1)
         )
-        return grad_xyz_ws, grad_rotations, grad_scales, grad_scale3d_factor, grad_sh_coeffs, None, None, None, None, None, None, None, None
+        return grad_xyz_ws, grad_rotations, grad_scales, grad_scale3d_factor, grad_density, None, grad_sh_coeffs, None, None, None, None, None, None, None, None, None

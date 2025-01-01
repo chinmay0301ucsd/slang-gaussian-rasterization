@@ -114,6 +114,17 @@ class AlphaBlendTiledRender(torch.autograd.Function):
                       render_grid.grid_height, 1)
         )
 
+         # Check for NaN/Inf in output_img
+        if torch.isnan(output_img).any() or torch.isinf(output_img).any():
+            print("Warning: NaN or Inf detected in output_img")
+            
+        # Check for NaN/Inf in abs_xyz_var 
+        if torch.isnan(abs_xyz_var).any() or torch.isinf(abs_xyz_var).any():
+            print("Warning: NaN or Inf detected in abs_xyz_var")
+            
+        # Check for negative values in n_contributors
+        if (n_contributors < 0).any():
+            print("Warning: Negative values detected in n_contributors")
         ctx.save_for_backward(sorted_gauss_idx, tile_ranges,
                               xyz_vs, inv_cov_vs, opacity, rgb, 
                               output_img, n_contributors, abs_xyz_var)

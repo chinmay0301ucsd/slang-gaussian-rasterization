@@ -167,6 +167,12 @@ float clip(float val, float min_val, float max_val)
     return max(min_val, min(max_val, val));
 }
 
+struct SigmaRS : IDifferentiable 
+{
+    float3x3 Sigma;
+    float3x3 R;
+    float3x3 S;
+};
 
 struct Camera : IDifferentiable
 {
@@ -175,11 +181,14 @@ struct Camera : IDifferentiable
     float3 position;
     float fovy;
     float fovx;
+    float fx;
+    float fy;
     int H;
     int W;
+    
 }
 
-Camera load_camera(TensorView<float> world_view_transform_t, TensorView<float> proj_mat_t, TensorView<float> position_t, no_diff float fovy, no_diff float fovx, uint H, uint W) {
+Camera load_camera(TensorView<float> world_view_transform_t, TensorView<float> proj_mat_t, TensorView<float> position_t, no_diff float fovy, no_diff float fovx, no_diff float fx, no_diff float fy, uint H, uint W) {
     float4x4 world_view_transform = float4x4(world_view_transform_t[uint2(0, 0)], world_view_transform_t[uint2(0, 1)], world_view_transform_t[uint2(0, 2)], world_view_transform_t[uint2(0, 3)],
                                              world_view_transform_t[uint2(1, 0)], world_view_transform_t[uint2(1, 1)], world_view_transform_t[uint2(1, 2)], world_view_transform_t[uint2(1, 3)],
                                              world_view_transform_t[uint2(2, 0)], world_view_transform_t[uint2(2, 1)], world_view_transform_t[uint2(2, 2)], world_view_transform_t[uint2(2, 3)],
@@ -191,7 +200,7 @@ Camera load_camera(TensorView<float> world_view_transform_t, TensorView<float> p
                                  proj_mat_t[uint2(3, 0)], proj_mat_t[uint2(3, 1)], proj_mat_t[uint2(3, 2)], proj_mat_t[uint2(3, 3)]);
     float3 position = float3(position_t[0], position_t[1], position_t[2]);
 
-    return { world_view_transform, proj_mat, position, fovy, fovx, H, W};
+    return { world_view_transform, proj_mat, position, fovy, fovx, fx, fy, H, W};
 }
 
 [Differentiable]
@@ -300,6 +309,57 @@ float splat_radius(float2x2 cov_vs, float det) {
     return radius;
 }
 
+float splat_radius2(float3 xyz, float density, float thresh, float3x3 Rw, float3x3 Sw, float3x3 invCov3dv, Camera cam) {
+    float3 mu = xyz;
+    float3x3 W = (float3x3)cam.world_view_transform;
+    float3x3 S = mul(W, mul(Sw, transpose(W)));
+    float3x3 R = mul(W, mul(Rw, transpose(W)));
+    float smax = max(S[0][0], max(S[1][1], S[2][2]));
+    float pdf = log(1.0/(1-thresh)) * 1.0/(density * smax * 2.506f);
+    if ((pdf >= 1.0) || (pdf < 0.0)) {
+        return 0.0;
+    }
+    float c =  dot(mu, mul(invCov3dv, mu)) + 2 * log(pdf);
+    // printf("c: %f\n", c);
+    // printf("muSigmamu: %f\n", dot(mu, mul(invCov3dw, mu)));
+    // printf("2log(pdf): %f\n", 2 * log(pdf));
+    // printf("density: %f\n", density);
+    // // printf("smax: %f\n", smax);
+    // printf("thresh: %f\n", thresh);
+    // if (c <= 0.0) {
+    //     return 0.0;
+    // }
+    float3 v = mul(invCov3dv, mu);
+    float3x3 vvT = float3x3(
+        v.x * v.x, v.x * v.y, v.x * v.z,
+        v.y * v.x, v.y * v.y, v.y * v.z,
+        v.z * v.x, v.z * v.y, v.z * v.z
+);
+    float3x3 Aq = invCov3dv - vvT / c;
+    float A = Aq[0][0];
+    float B = Aq[0][1];
+    float C = Aq[1][1];
+    float K = -compute_det3x3(Aq)/(A*C - B*B);
+    
+    if (!((sign(A) == sign(C)) && (sign(K) == sign(A)))) {
+        return 0.0;
+    }
+
+    // printf("Aq:\n");
+    // printf("[%f, %f, %f]\n", Aq[0][0], Aq[0][1], Aq[0][2]);
+    // printf("[%f, %f, %f]\n", Aq[1][0], Aq[1][1], Aq[1][2]);
+    // printf("[%f, %f, %f]\n", Aq[2][0], Aq[2][1], Aq[2][2]);
+    // printf("vvT:\n");
+    // printf("[%f, %f, %f]\n", vvT[0][0], vvT[0][1], vvT[0][2]);
+    // printf("[%f, %f, %f]\n", vvT[1][0], vvT[1][1], vvT[1][2]);
+    // printf("[%f, %f, %f]\n", vvT[2][0], vvT[2][1], vvT[2][2]);
+
+    float lmin = ((A+C) - sqrt((A-C)*(A-C) + 4*B*B)) / 2.0;
+    float lmax = ((A+C) + sqrt((A-C)*(A-C) + 4*B*B)) / 2.0;
+    float radius = cam.fx * sqrt(K) / sqrt(lmin);
+    return radius;
+}
+
 [Differentiable]
 float compute_det(float2x2 M) {
     return M[0][0] * M[1][1] - M[0][1] * M[1][0];
@@ -369,11 +429,29 @@ Splat_2D_Vertex project_gaussian_to_camera(Gaussian_3D g, Camera cam, uint activ
     }
     float3 rgb = softplus_rgb ? compute_color_from_sh_coeffs_softplus(g.sh_coeffs, g.xyz_ws, cam.position, active_sh)
                               : compute_color_from_sh_coeffs(g.sh_coeffs, g.xyz_ws, cam.position, active_sh);
-    float3x3 cov_ws = get_covariance_from_quat_scales(g.rotations, g.scales);
+    SigmaRS sigma_rs = get_covariance_from_quat_scales(g.rotations, g.scales);
+    float3x3 cov_ws = sigma_rs.Sigma;
     float2x2 cov_vs = covariance_3d_to_2d(cam, g.xyz_ws, cov_ws);
 
     return { xyz_vs, rgb, cov_vs };
 }
+
+// Function for new tiling shader, doesn't need to compute 2D covariance. 
+[Differentiable]
+Splat_2D_Vertex project_gaussian_to_camera_newshader(Gaussian_3D g, Camera cam, uint active_sh, bool softplus_rgb) {
+    float3 xyz_vs = project_point(g.xyz_ws, cam);
+    if (xyz_vs.z <= 0.2) {
+        return { float3(0.0), float3(0.0), float2x2(0.0) };
+    }
+    float3 rgb = softplus_rgb ? compute_color_from_sh_coeffs_softplus(g.sh_coeffs, g.xyz_ws, cam.position, active_sh)
+                              : compute_color_from_sh_coeffs(g.sh_coeffs, g.xyz_ws, cam.position, active_sh);
+    SigmaRS sigma_rs = get_covariance_from_quat_scales(g.rotations, g.scales);
+    float3x3 cov_ws = sigma_rs.Sigma;
+    float2x2 cov_vs = {0.0, 0.0, 0.0, 0.0}; //Because it's not used in the new tile computation code
+
+    return { xyz_vs, rgb, cov_vs };
+}
+
 
 struct Splat_2D_AlphaBlend : IDifferentiable
 {
@@ -568,7 +646,7 @@ float evaluate_splat_tomo(Splat_3D_AlphaBlend g,
 
 
 [Differentiable]
-float3x3 get_covariance_from_quat_scales(float4 q, float3 s) {
+SigmaRS get_covariance_from_quat_scales(float4 q, float3 s) {
     float r = q[0], x = q[1], y = q[2], z = q[3];
 
     float3x3 rotation_matrix = float3x3(
@@ -582,8 +660,27 @@ float3x3 get_covariance_from_quat_scales(float4 q, float3 s) {
 
     float3x3 L = mul(rotation_matrix, scales_matrix);
 
-    return mul(L, transpose(L));
+    return {mul(L, transpose(L)), rotation_matrix, scales_matrix};
 }
+
+// [Differentiable]
+// float3x3 get_covariance_from_quat_scales(float4 q, float3 s) {
+//     float r = q[0], x = q[1], y = q[2], z = q[3];
+
+//     float3x3 rotation_matrix = float3x3(
+//         1 - 2 * (y * y + z * z), 2 * (x * y - r * z), 2 * (x * z + r * y),
+//         2 * (x * y + r * z), 1 - 2 * (x * x + z * z), 2 * (y * z - r * x),
+//         2 * (x * z - r * y), 2 * (y * z + r * x), 1 - 2 * (x * x + y * y));
+
+//     float3x3 scales_matrix = float3x3(s[0], 0, 0,
+//                                       0, s[1], 0,
+//                                       0, 0, s[2]);
+
+//     float3x3 L = mul(rotation_matrix, scales_matrix);
+
+//     return mul(L, transpose(L));
+// }
+
 
 [Differentiable]
 float3x3 get_inverse_covariance_from_quat_scales(float4 q, float3 s) {

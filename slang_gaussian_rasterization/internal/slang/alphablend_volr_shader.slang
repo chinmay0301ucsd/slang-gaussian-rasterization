@@ -70,11 +70,10 @@ float4 alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
     const int shared_memory_rounds = ((tile_idx_end - tile_idx_start + block_size - 1) / block_size);
     uint32_t thread_rank = cudaThreadIdx().y * cudaBlockDim().x + cudaThreadIdx().x;
 
-    int32_t local_n_contrib = 0;
-    int32_t last_n_contrib = 0;
+    uint32_t local_n_contrib = 0;
     int splats_left_to_process = tile_idx_end - tile_idx_start;
     for (int i = 0; i < shared_memory_rounds; i++)
-    {
+    {        
         // Collectively fetch per-Gaussian data from global to shared
         AllMemoryBarrierWithGroupSync();
         int splat_pointer_offset = i * block_size + thread_rank;
@@ -98,12 +97,11 @@ float4 alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
                 float4 new_pixel_state = update_pixel_state(curr_pixel_state, gauss_rgba);
                 if (new_pixel_state.a < 0.0001f) {
                     // This Splat never registred so we subtract it before we break.
-                    local_n_contrib--;
+                    local_n_contrib = max(0, local_n_contrib - 1);
                     thread_active = false;
                     break;
                 }
                 curr_pixel_state = new_pixel_state;
-                // last_n_contrib = local_n_contrib;
             }
         }
         splats_left_to_process -= block_size;
@@ -146,7 +144,7 @@ void bwd_alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
     uint32_t current_splat_offset = tile_idx_end - tile_idx_start;
 
     float4 current_pixel_state;
-    int32_t n_contrib_fwd;
+    int32_t n_contrib_fwd = 0;
     if (is_inside) {
         current_pixel_state = float4(final_pixel_state[uint3(uint32_t(pix_coord.y), uint32_t(pix_coord.x), 0)],
                                      final_pixel_state[uint3(uint32_t(pix_coord.y), uint32_t(pix_coord.x), 1)],
