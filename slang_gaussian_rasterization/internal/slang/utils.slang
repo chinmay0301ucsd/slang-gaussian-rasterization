@@ -309,54 +309,57 @@ float splat_radius(float2x2 cov_vs, float det) {
     return radius;
 }
 
-float splat_radius2(float3 xyz, float density, float thresh, float3x3 Rw, float3x3 Sw, float3x3 invCov3dv, Camera cam) {
-    float3 mu = xyz;
-    float3x3 W = (float3x3)cam.world_view_transform;
-    float3x3 S = mul(W, mul(Sw, transpose(W)));
-    float3x3 R = mul(W, mul(Rw, transpose(W)));
-    float smax = max(S[0][0], max(S[1][1], S[2][2]));
-    float pdf = log(1.0/(1-thresh)) * 1.0/(density * smax * 2.506f);
-    if ((pdf >= 1.0) || (pdf < 0.0)) {
-        return 0.0;
-    }
-    float c =  dot(mu, mul(invCov3dv, mu)) + 2 * log(pdf);
-    // printf("c: %f\n", c);
-    // printf("muSigmamu: %f\n", dot(mu, mul(invCov3dw, mu)));
-    // printf("2log(pdf): %f\n", 2 * log(pdf));
-    // printf("density: %f\n", density);
-    // // printf("smax: %f\n", smax);
-    // printf("thresh: %f\n", thresh);
-    // if (c <= 0.0) {
-    //     return 0.0;
-    // }
+float splat_radius2(float3 xyz_vs, float density, float thresh, float3x3 Sw, float3x3 invCov3dv, Camera cam) {
+    float3 mu = xyz_vs;
+    float3 dir_mu = normalize(xyz_vs);
+    float3x3 S = Sw; // mul(W, mul(Sw, transpose(W)));
+
+    // TODO: This s_app limit logic should incorporate the directionality, it should'nt be same for all orientations of the Gaussian.
+    float s_app = 1.0f/dot(dir_mu, mul(invCov3dv, dir_mu));
+    // float s_app = max(S[0][0], max(S[1][1], S[2][2])); // Geometric mean of diagonal elements
+    // float s_app = pow(S[0][0] * S[1][1] * S[2][2], 1.0/3.0); // Geometric mean of diagonal elements
+    float pdf_lim = log(1.0/(1-thresh)) * 1.0/(density * s_app * 2.506f);
+    // NOTE: Have removed pdf_lim > 1 condition.
+    // printf("2 * log(pdf_lim): %f, muSmu: %f\n", 2 * log(pdf_lim), dot(mu, mul(invCov3dv, mu)));
+    float c =  dot(mu, mul(invCov3dv, mu)) + 2 * log(pdf_lim);
+
     float3 v = mul(invCov3dv, mu);
     float3x3 vvT = float3x3(
         v.x * v.x, v.x * v.y, v.x * v.z,
         v.y * v.x, v.y * v.y, v.y * v.z,
         v.z * v.x, v.z * v.y, v.z * v.z
 );
-    float3x3 Aq = invCov3dv - vvT / c;
-    float A = Aq[0][0];
-    float B = Aq[0][1];
-    float C = Aq[1][1];
-    float K = -compute_det3x3(Aq)/(A*C - B*B);
     
-    if (!((sign(A) == sign(C)) && (sign(K) == sign(A)))) {
-        return 0.0;
-    }
+    // [A, B/2, D/2; B/2, C, E/2; D/2, E/2, F]
+    float3x3 Aq = invCov3dv - vvT/c;
+    float A = Aq[0][0];
+    float B = 2*Aq[0][1];
+    float D = 2*Aq[0][2];
+    float C = Aq[1][1];
+    float E = 2*Aq[1][2];
+    float F = Aq[2][2];
 
-    // printf("Aq:\n");
-    // printf("[%f, %f, %f]\n", Aq[0][0], Aq[0][1], Aq[0][2]);
-    // printf("[%f, %f, %f]\n", Aq[1][0], Aq[1][1], Aq[1][2]);
-    // printf("[%f, %f, %f]\n", Aq[2][0], Aq[2][1], Aq[2][2]);
-    // printf("vvT:\n");
-    // printf("[%f, %f, %f]\n", vvT[0][0], vvT[0][1], vvT[0][2]);
-    // printf("[%f, %f, %f]\n", vvT[1][0], vvT[1][1], vvT[1][2]);
-    // printf("[%f, %f, %f]\n", vvT[2][0], vvT[2][1], vvT[2][2]);
+    float fx = cam.fx;
+    float fy = cam.fy;
+    float cx = cam.W / 2.0;
+    float cy = cam.H / 2.0;
 
-    float lmin = ((A+C) - sqrt((A-C)*(A-C) + 4*B*B)) / 2.0;
-    float lmax = ((A+C) + sqrt((A-C)*(A-C) + 4*B*B)) / 2.0;
-    float radius = cam.fx * sqrt(K) / sqrt(lmin);
+    float A_ = A / (fx*fx);
+    float B_ = B / (fx*fy);
+    float C_ = C / (fy*fy);
+    float D_ = (D / fx) - (2*A_*cx) - (B_*cy);
+    float E_ = (E / fy) - (2*C_*cy) - (B_*cx);
+    float F_ = F  + A_*cx*cx + C_*cy*cy + B_*cx*cy - (D * cx/fx) - (E * cy/fy);
+
+    float3x3 Aq_ = float3x3(A_, B_/2, D_/2, B_/2, C_, E_/2, D_/2, E_/2, F_);
+    float K = -(compute_det3x3(Aq_) / (A_ * C_ - (B_ * B_)/4.0));
+
+    float A_1 = A_ / K;
+    float B_1 = B_ / K;
+    float C_1 = C_ / K;
+
+    float lmin = ((A_1 + C_1) - sqrt((A_1 - C_1) * (A_1 - C_1) + (B_1 * B_1))) / 2.0;
+    float radius = ceil(1.0 / sqrt(lmin));
     return radius;
 }
 

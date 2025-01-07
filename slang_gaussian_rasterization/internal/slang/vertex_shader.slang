@@ -215,11 +215,9 @@ void vertex_shader_new(DiffTensorView xyz_ws,
     float3x3 cov3d_vs = covariance_3dw_to_3dv(cam, cov3d_ws);
 
     float3x3 inv_cov3d_vs = covariance_3dw_to_3dv(cam, inv_cov3d_ws);
-    // float3x3 inv_cov3d_vs = inverse3x3(cov3d_vs);
 
     float3 xyz3d_cam = geom_transform_points2(gauss.xyz_ws, cam.world_view_transform);
-    // float radius = splat_radius(splat.cov_vs, det);
-    float radius = splat_radius2(xyz3d_cam, density, tilethresh, R, S, inv_cov3d_vs, cam);
+    float radius = splat_radius2(xyz3d_cam, density, tilethresh, S, inv_cov3d_vs, cam);
 
     float2 pixelspace_xy = { ndc2pix(splat.xyz_vs.x, image_width), ndc2pix(splat.xyz_vs.y, image_height) };
     rectangle rect_tile_space = get_rectangle_tile_space(pixelspace_xy,
@@ -230,7 +228,8 @@ void vertex_shader_new(DiffTensorView xyz_ws,
         return;
     }
 
-    // printf("radius: %f\n", radius);
+    // float2x2 g_inv_cov_vs = float2x2(splat.cov_vs[1][1], -splat.cov_vs[0][1], -splat.cov_vs[1][0], splat.cov_vs[0][0]) / det;
+
     out_radii[g_idx] = (uint32_t)radius;
     out_tiles_touched[g_idx] = n_tiles;
     out_rect_tile_space[uint2(g_idx, 0)] = rect_tile_space.min_x;
@@ -238,9 +237,9 @@ void vertex_shader_new(DiffTensorView xyz_ws,
     out_rect_tile_space[uint2(g_idx, 2)] = rect_tile_space.max_x;
     out_rect_tile_space[uint2(g_idx, 3)] = rect_tile_space.max_y;
     // splat.xyz_vs doesn't need to be stored, remove it (uses unnecessary atomic add)
-    // out_xyz_vs.storeOnce(uint2(g_idx, 0), splat.xyz_vs.x);
-    // out_xyz_vs.storeOnce(uint2(g_idx, 1), splat.xyz_vs.y);
-    // out_xyz_vs.storeOnce(uint2(g_idx, 2), splat.xyz_vs.z);
+    out_xyz_vs.storeOnce(uint2(g_idx, 0), splat.xyz_vs.x);
+    out_xyz_vs.storeOnce(uint2(g_idx, 1), splat.xyz_vs.y);
+    out_xyz_vs.storeOnce(uint2(g_idx, 2), splat.xyz_vs.z);
     out_xyz3d_cam.storeOnce(uint2(g_idx, 0), xyz3d_cam.x);
     out_xyz3d_cam.storeOnce(uint2(g_idx, 1), xyz3d_cam.y);
     out_xyz3d_cam.storeOnce(uint2(g_idx, 2), xyz3d_cam.z);
