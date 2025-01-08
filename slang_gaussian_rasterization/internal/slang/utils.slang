@@ -311,13 +311,13 @@ float splat_radius(float2x2 cov_vs, float det) {
 
 float splat_radius2(float3 xyz_vs, float density, float thresh, float3x3 Sw, float3x3 invCov3dv, Camera cam) {
     float3 mu = xyz_vs;
-    float3 dir_mu = normalize(xyz_vs);
+    // float3 dir_mu = normalize(xyz_vs);
     float3x3 S = Sw; // mul(W, mul(Sw, transpose(W)));
 
     // TODO: This s_app limit logic should incorporate the directionality, it should'nt be same for all orientations of the Gaussian.
-    float s_app = 1.0f/dot(dir_mu, mul(invCov3dv, dir_mu));
+    // float s_app = 1.0f/dot(dir_mu, mul(invCov3dv, dir_mu));
     // float s_app = max(S[0][0], max(S[1][1], S[2][2])); // Geometric mean of diagonal elements
-    // float s_app = pow(S[0][0] * S[1][1] * S[2][2], 1.0/3.0); // Geometric mean of diagonal elements
+    float s_app = pow(S[0][0] * S[1][1] * S[2][2], 1.0/3.0); // Geometric mean of diagonal elements
     float pdf_lim = log(1.0/(1-thresh)) * 1.0/(density * s_app * 2.506f);
     // NOTE: Have removed pdf_lim > 1 condition.
     // printf("2 * log(pdf_lim): %f, muSmu: %f\n", 2 * log(pdf_lim), dot(mu, mul(invCov3dv, mu)));
@@ -350,15 +350,21 @@ float splat_radius2(float3 xyz_vs, float density, float thresh, float3x3 Sw, flo
     float D_ = (D / fx) - (2*A_*cx) - (B_*cy);
     float E_ = (E / fy) - (2*C_*cy) - (B_*cx);
     float F_ = F  + A_*cx*cx + C_*cy*cy + B_*cx*cy - (D * cx/fx) - (E * cy/fy);
-
-    float3x3 Aq_ = float3x3(A_, B_/2, D_/2, B_/2, C_, E_/2, D_/2, E_/2, F_);
-    float K = -(compute_det3x3(Aq_) / (A_ * C_ - (B_ * B_)/4.0));
+    
+    // TODO: Combine this into a single operation -- don't recreate matrix and then compute det. Compute it directly.
+    // float3x3 Aq_ = float3x3(A_, B_ / 2, D_ / 2, B_ / 2, C_, E_ / 2, D_ / 2, E_ / 2, F_);
+    float det_Aq_ = (A_ * C_ - (B_ * B_) / 4.0) * F_ + (B_ * D_ * E_ - C_*D_*D_ - A_*E_*E_)/4.0;
+    // float det_Aq_old = compute_det3x3(Aq_);
+    float K = -(det_Aq_ / (A_ * C_ - (B_ * B_)/4.0));
 
     float A_1 = A_ / K;
     float B_1 = B_ / K;
     float C_1 = C_ / K;
 
     float lmin = ((A_1 + C_1) - sqrt((A_1 - C_1) * (A_1 - C_1) + (B_1 * B_1))) / 2.0;
+    if (lmin < 0.0) {
+        return 0.0;
+    }
     float radius = ceil(1.0 / sqrt(lmin));
     return radius;
 }
