@@ -45,8 +45,6 @@ def render_visualize_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
                                                                                            fovx,
                                                                                            render_grid,
                                                                                            softplus_rgb)
-    # print("num gaussians on all tiles", len(sorted_gauss_idx))
-    # print("num gaussians per tile", len(sorted_gauss_idx) / radii.shape[0])
     # retain_grad fails if called with torch.no_grad() under evaluation
     abs_xyz_var = torch.zeros_like(xyz_ws, requires_grad=True)
     try:

@@ -17,7 +17,6 @@ Inria 3DGS code-base https://github.com/graphdeco-inria/gaussian-splatting"""
 import torch
 from slang_gaussian_rasterization.internal.alphablend_tiled_slang import render_alpha_blend_tiles_slang_raw
 from slang_gaussian_rasterization.internal.alphablend_volr_tiled_slang import render_alpha_blend_volr_tiles_slang_raw
-from slang_gaussian_rasterization.internal.alphablend_volr_vis_tiled_slang import render_visualize_volr_tiles_slang_raw
 
 def common_properties_from_inria_GaussianModel(gaussian_model):
   """ Fetches all the Gaussian properties from the inria defined Gaussian Model object"""
@@ -43,7 +42,7 @@ def common_properties_from_inria_Camera(camera):
   return world_view_transform, projection_matrix, cam_pos, fovy, fovx, height, width 
 
 
-def render(viewpoint_camera, pc, pipe, bg_color, scaling_modifier = 1.0, override_color = None, use_new_tile_size=False, tilethresh=0.005):
+def render(viewpoint_camera, pc, pipe, bg_color, scaling_modifier = 1.0, override_color = None):
   """ Implements the volumetric rasterization Interface defined in the inria code-base."""
   assert scaling_modifier == 1.0, "scaling_modifier is not supported in the slang-gaussian-rasterization."
   assert override_color is None, "override_color is not support in the slang-gaussian-rasterization."
@@ -61,28 +60,28 @@ def render(viewpoint_camera, pc, pipe, bg_color, scaling_modifier = 1.0, overrid
   render_pkg = render_alpha_blend_volr_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
                                                   opacity_volr, sh_coeffs, active_sh,
                                                   world_view_transform, proj_mat, cam_pos,
-                                                  fovy, fovx, height, width, softplus_rgb, tile_size=16, use_new_tile_size=use_new_tile_size, tilethresh=tilethresh)
+                                                  fovy, fovx, height, width, softplus_rgb, tile_size=16)
   
   return render_pkg
 
 
-def render_visualize(viewpoint_camera, pc, pipe, bg_color, scaling_modifier = 1.0, override_color = None):
-  """ Implements the visualize interface defined in the inria code-base."""
-  assert scaling_modifier == 1.0, "scaling_modifier is not supported in the slang-gaussian-rasterization."
-  assert override_color is None, "override_color is not support in the slang-gaussian-rasterization."
-  assert pipe.convert_SHs_python is False, "convert_SHs_python is not supported."
-  assert pipe.compute_cov3D_python is False, "compute_cov3D_python is not supported."
-  assert pipe.debug is False, "debug mode is not supported."
-  assert torch.equal(bg_color, torch.zeros_like(bg_color)), "only black background is supported currently."
+# def render_visualize(viewpoint_camera, pc, pipe, bg_color, scaling_modifier = 1.0, override_color = None):
+#   """ Implements the visualize interface defined in the inria code-base."""
+#   assert scaling_modifier == 1.0, "scaling_modifier is not supported in the slang-gaussian-rasterization."
+#   assert override_color is None, "override_color is not support in the slang-gaussian-rasterization."
+#   assert pipe.convert_SHs_python is False, "convert_SHs_python is not supported."
+#   assert pipe.compute_cov3D_python is False, "compute_cov3D_python is not supported."
+#   assert pipe.debug is False, "debug mode is not supported."
+#   assert torch.equal(bg_color, torch.zeros_like(bg_color)), "only black background is supported currently."
 
-  active_sh = pc.active_sh_degree
-  softplus_rgb = pipe.softplus_rgb
-  xyz_ws, rotations, scales, sh_coeffs, opacity, opacity_volr = common_properties_from_inria_GaussianModel(pc)
-  world_view_transform, proj_mat, cam_pos, fovy, fovx, height, width = common_properties_from_inria_Camera(viewpoint_camera)  
+#   active_sh = pc.active_sh_degree
+#   softplus_rgb = pipe.softplus_rgb
+#   xyz_ws, rotations, scales, sh_coeffs, opacity, opacity_volr = common_properties_from_inria_GaussianModel(pc)
+#   world_view_transform, proj_mat, cam_pos, fovy, fovx, height, width = common_properties_from_inria_Camera(viewpoint_camera)  
 
-  render_pkg = render_visualize_volr_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
-                                                  opacity_volr, sh_coeffs, active_sh,
-                                                  world_view_transform, proj_mat, cam_pos,
-                                                  fovy, fovx, height, width, softplus_rgb)
+#   render_pkg = render_visualize_volr_tiles_slang_raw(xyz_ws, rotations, scales, opacity,
+#                                                   opacity_volr, sh_coeffs, active_sh,
+#                                                   world_view_transform, proj_mat, cam_pos,
+#                                                   fovy, fovx, height, width, softplus_rgb)
   
-  return render_pkg
+#   return render_pkg

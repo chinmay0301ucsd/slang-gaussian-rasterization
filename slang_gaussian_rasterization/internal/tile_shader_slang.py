@@ -22,7 +22,6 @@ def vertex_and_tile_shader(xyz_ws,
                            scales,
                            scale3d_factor,
                            density,
-                           tilethresh,
                            sh_coeffs,
                            active_sh,
                            world_view_transform,
@@ -31,8 +30,7 @@ def vertex_and_tile_shader(xyz_ws,
                            fovy,
                            fovx,
                            render_grid, 
-                           softplus_rgb,
-                           use_new_tile_size=False):
+                           softplus_rgb):
     """
     Vertex and Tile Shader for 3D Gaussian Splatting.
 
@@ -53,7 +51,6 @@ def vertex_and_tile_shader(xyz_ws,
       fovx: The horizontal Field of View in radians.
       render_grid: Describes the resolution of the image and the tiling resoluting.
       softplus_rgb: bool to decide if spherical harmonic evals should be passed through a softplus function
-      use_new_tile_size: bool to decide if the new density based tile size should be used.
 
     Returns:
       sorted_gauss_idx: A list of indices that describe the sorted order with which all tiles should rendered the Gaussians. [M, 1]
@@ -70,7 +67,6 @@ def vertex_and_tile_shader(xyz_ws,
                                                                                         scales,
                                                                                         scale3d_factor,
                                                                                         density,
-                                                                                        tilethresh,
                                                                                         sh_coeffs,
                                                                                         active_sh,
                                                                                         world_view_transform,
@@ -79,8 +75,7 @@ def vertex_and_tile_shader(xyz_ws,
                                                                                         fovy,
                                                                                         fovx,
                                                                                         render_grid,
-                                                                                        softplus_rgb,
-                                                                                        use_new_tile_size)
+                                                                                        softplus_rgb)
     # Check for NaNs in key tensors
     with torch.no_grad():
         has_nans = (torch.isnan(xyz3d_cam).any() or 
@@ -128,10 +123,10 @@ def vertex_and_tile_shader(xyz_ws,
 
 class VertexShader(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, xyz_ws, rotations, scales, scale3d_factor, density, tilethresh,
+    def forward(ctx, xyz_ws, rotations, scales, scale3d_factor, density,
                 sh_coeffs, active_sh, world_view_transform,
                 proj_mat, cam_pos, fovy, fovx,
-                render_grid, softplus_rgb, use_new_tile_size):
+                render_grid, softplus_rgb):
       n_points = xyz_ws.shape[0]
       tiles_touched = torch.zeros((n_points), 
                                   device="cuda", 
@@ -162,13 +157,12 @@ class VertexShader(torch.autograd.Function):
       tan_half_fovy = math.tan(fovy / 2.0)
       fx = render_grid.image_width / (2.0 * tan_half_fovx)
       fy = render_grid.image_height / (2.0 * tan_half_fovy)
-      vshader = slang_modules.vertex_shader.vertex_shader_new if use_new_tile_size else slang_modules.vertex_shader.vertex_shader
+      vshader = slang_modules.vertex_shader.vertex_shader
       vshader(xyz_ws=xyz_ws,
               rotations=rotations,
               scales=scales,
               scale3d_factor=scale3d_factor,
               density=density,
-              tilethresh=tilethresh,
               sh_coeffs=sh_coeffs,
               active_sh=active_sh,
               world_view_transform=world_view_transform,
@@ -206,8 +200,6 @@ class VertexShader(torch.autograd.Function):
       ctx.fy = fy
       ctx.active_sh = active_sh
       ctx.softplus_rgb = softplus_rgb
-      ctx.use_new_tile_size = use_new_tile_size
-      ctx.tilethresh = tilethresh
       return tiles_touched, rect_tile_space, radii, xyz_vs, xyz3d_cam, inv_cov_vs, inv_cov3d_vs, rgb
     
     @staticmethod
@@ -221,8 +213,6 @@ class VertexShader(torch.autograd.Function):
         fy = ctx.fy
         active_sh = ctx.active_sh
         softplus_rgb = ctx.softplus_rgb
-        use_new_tile_size = ctx.use_new_tile_size
-        tilethresh = ctx.tilethresh
 
         n_points = xyz_ws.shape[0]
 
@@ -232,13 +222,12 @@ class VertexShader(torch.autograd.Function):
         grad_scale3d_factor = torch.zeros_like(scale3d_factor)
         grad_density = torch.zeros_like(density)
         grad_sh_coeffs = torch.zeros_like(sh_coeffs)
-        vshader = slang_modules.vertex_shader.vertex_shader_new if use_new_tile_size else slang_modules.vertex_shader.vertex_shader
+        vshader = slang_modules.vertex_shader.vertex_shader
         vshader.bwd(xyz_ws=(xyz_ws, grad_xyz_ws),
                     rotations=(rotations, grad_rotations),
                     scales=(scales, grad_scales),
                     scale3d_factor=(scale3d_factor, grad_scale3d_factor),
                     density=(density, grad_density),
-                    tilethresh=tilethresh,
                     sh_coeffs=(sh_coeffs, grad_sh_coeffs),
                     active_sh=active_sh,
                     world_view_transform=world_view_transform,
