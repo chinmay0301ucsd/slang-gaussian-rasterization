@@ -196,14 +196,25 @@ void bwd_alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
                 bwd_diff(update_pixel_state)(dp_current_pixel_state, dp_gauss_rgba, d_current_pixel_state);
                 d_current_pixel_state = dp_current_pixel_state.getDifferential();
                 bwd_diff(evaluate_splat_volr)(dp_g, dp_dir, H, W, fx, fy, dp_gauss_rgba.d);
-                bwd_diff(load_splat3d_alphablend)(g_idx, xyz3d_vs, inv_cov3d_vs, opacity, opacity_volr, rgb, dp_g.d);
-                float oldvalx, oldvaly, oldvalz;
-                grad_abs.InterlockedAdd(uint2(g_idx, 0), abs(dp_g.d.xyz3d_vs.x), oldvalx);
-                grad_abs.InterlockedAdd(uint2(g_idx, 1), abs(dp_g.d.xyz3d_vs.y), oldvaly);
-                grad_abs.InterlockedAdd(uint2(g_idx, 2), abs(dp_g.d.xyz3d_vs.z), oldvalz);
+                bool has_nan = false;
+                for (int row = 0; row < 3; ++row) {
+                    for (int col=0; col<3; ++col) {
+                        if (isnan(dp_g.d.inv_cov3d_vs[row][col])) {
+                            has_nan = true;
+                            break;
+                        }
+                    }
+                }
+                // if (!has_nan) {
+                if (has_nan==false) {
+                    bwd_diff(load_splat3d_alphablend)(g_idx, xyz3d_vs, inv_cov3d_vs, opacity, opacity_volr, rgb, dp_g.d);   
+                    float oldvalx, oldvaly, oldvalz;
+                    grad_abs.InterlockedAdd(uint2(g_idx, 0), abs(dp_g.d.xyz3d_vs.x), oldvalx);
+                    grad_abs.InterlockedAdd(uint2(g_idx, 1), abs(dp_g.d.xyz3d_vs.y), oldvaly);
+                    grad_abs.InterlockedAdd(uint2(g_idx, 2), abs(dp_g.d.xyz3d_vs.z), oldvalz);
+                }
             }
         }
-        splats_left_to_process -= block_size;
     }
 }
 

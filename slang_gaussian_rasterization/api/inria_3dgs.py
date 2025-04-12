@@ -16,6 +16,7 @@ Inria 3DGS code-base https://github.com/graphdeco-inria/gaussian-splatting"""
 
 import torch
 from slang_gaussian_rasterization.internal.alphablend_tiled_slang import render_alpha_blend_tiles_slang_raw
+# from slang_gaussian_rasterization.internal.alphablend_vis_tiled_slang import render_visualize_tiles_slang_raw
 
 def common_properties_from_inria_GaussianModel(gaussian_model, opacity_volr = False):
   """ Fetches all the Gaussian properties from the inria defined Gaussian Model object"""

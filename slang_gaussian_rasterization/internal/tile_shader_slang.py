@@ -255,4 +255,4 @@ class VertexShader(torch.autograd.Function):
               blockSize=(256, 1, 1),
               gridSize=(math.ceil(n_points/256), 1, 1)
         )
-        return grad_xyz_ws, grad_rotations, grad_scales, grad_scale3d_factor, grad_density, None, grad_sh_coeffs, None, None, None, None, None, None, None, None, None
+        return grad_xyz_ws, grad_rotations, grad_scales, grad_scale3d_factor, grad_density, grad_sh_coeffs, None, None, None, None, None, None, None, None

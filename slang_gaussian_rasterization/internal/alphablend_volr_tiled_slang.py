@@ -1,5 +1,3 @@
-# Copyright 2024 Google LLC
-#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -121,7 +119,7 @@ class AlphaBlendVolrTiledRender(torch.autograd.Function):
             rgb=rgb, 
             output_img=output_img,
             n_contributors=n_contributors,
-            grad_abs=abs_xyz_var, ## NOTE: remove this line if it doesn't work
+            grad_abs=abs_xyz_var,
             fx=fx,
             fy=fy,
             grid_height=render_grid.grid_height,
