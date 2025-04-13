@@ -205,9 +205,9 @@ void bwd_alpha_blend_volr(TensorView<int32_t> sorted_gauss_idx,
                         }
                     }
                 }
-                // if (!has_nan) {
                 if (has_nan==false) {
                     bwd_diff(load_splat3d_alphablend)(g_idx, xyz3d_vs, inv_cov3d_vs, opacity, opacity_volr, rgb, dp_g.d);   
+                    // For accumulating absGS gradient incase someone wants to use it for densification.
                     float oldvalx, oldvaly, oldvalz;
                     grad_abs.InterlockedAdd(uint2(g_idx, 0), abs(dp_g.d.xyz3d_vs.x), oldvalx);
                     grad_abs.InterlockedAdd(uint2(g_idx, 1), abs(dp_g.d.xyz3d_vs.y), oldvaly);
